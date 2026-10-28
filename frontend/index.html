@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>서울 상수관로 화면속도 측정</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="stage" aria-label="상수관로 지도">
+  <div id="naver"></div><div id="ml"></div>
+  <div id="hud" class="mono small" hidden></div>
+  <div id="authmsg" hidden></div>
+</main>
+<header class="banner">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 8h10v8h12M5 24h10v-8" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="8" r="3" fill="currentColor"/><circle cx="5" cy="24" r="3" fill="currentColor"/><circle cx="27" cy="16" r="3" fill="currentColor"/></svg></span><h1>서울 상수관로 화면속도</h1></div>
+  <div class="top-controls"><div class="map-toggle-column">
+  <label class="toggle-row center-toggle" title="서울 전체 경계의 고정 중앙지점 표시"><span>중앙지점 표시</span><input type="checkbox" id="optCenter" role="switch" disabled></label>
+  <button id="genScn" class="range-toggle" type="button" role="switch" aria-checked="false" title="현재 지도 크기에 맞춰 서울 전체 범위를 다시 설정합니다. 완료되면 토글이 꺼집니다." disabled><span>서울 전체 범위 맞추기</span><span class="switch-track" aria-hidden="true"></span></button>
+  </div><div class="layer-control"><div id="layers"></div></div></div>
+  <div id="status" class="status" role="status">초기화 중…</div>
+</header>
+<aside id="panel" aria-label="화면속도 측정">
+  <section id="card" class="metric-card">
+    <div class="card-heading"><h2 class="lbl card-title"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6M12 2v3M18.5 6.5l1.5-1.5"/></svg></span>관로 표시 시간</h2><div class="card-actions"><span class="help"><button class="info-button" type="button" aria-label="관로 표시 시간 설명" aria-describedby="liveHelp">i</button><span id="liveHelp" class="help-text" role="tooltip"><strong>실시간 측정</strong>지도를 확대·축소·이동하면 선택한 관로의 표시 시간을 측정합니다.<br><br>관로 표시 시간은 지도 조작이 끝난 뒤 관로가 화면에 그려질 때까지의 시간입니다.<br><br>캐시 초기화를 켜면 조작마다 관로 타일을 새로 요청합니다.</span></span><button class="collapse-button" type="button" aria-label="관로 표시 시간 카드 접기" aria-expanded="true" aria-controls="liveCardContent"><span aria-hidden="true">⌃</span></button></div></div>
+    <div id="liveCardContent" class="card-content">
+    <div class="big" data-k="big">–</div>
+    <div class="sub" data-k="sub"></div>
+    <div class="metric-footer"><span class="live-dot" aria-hidden="true"></span><span>실시간 측정</span><span id="live" class="mono">fps –</span></div>
+    <label class="toggle-row" hidden><span>캐시 초기화</span><input type="checkbox" id="optLiveCold" role="switch"></label>
+    </div>
+  </section>
+  <section class="scenario-card">
+    <div class="card-heading"><h2 class="card-title"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H8a4 4 0 0 0-4 4v1M17 4l3 3-3 3M4 17h12a4 4 0 0 0 4-4v-1M7 20l-3-3 3-3"/></svg></span>자동으로 비교하기</h2><div class="card-actions"><span class="help"><button class="info-button" type="button" aria-label="자동 시나리오 측정 조건" aria-describedby="scenarioHelp">i</button><span id="scenarioHelp" class="help-text" role="tooltip"><strong>자동 비교</strong>선택한 관로를 설정한 횟수만큼 반복 측정합니다.<br><br>서울 전체를 100%로 하여 200·400·800·1600% 순서로 확대한 뒤 역순으로 축소하고, 400%에서 강북구·강남구·강동구·강서구·서울 중앙으로 이동합니다.<br><br>캐시 초기화를 켜면 단계마다 관로 타일을 새로 요청합니다.</span></span><button class="collapse-button" type="button" aria-label="자동으로 비교하기 카드 접기" aria-expanded="true" aria-controls="autoCardContent"><span aria-hidden="true">⌃</span></button></div></div>
+    <div id="autoCardContent" class="card-content">
+    <div class="run-actions"><button id="runScn" class="primary-button"><span aria-hidden="true">▶</span> 시나리오 실행</button><button id="stopScn" disabled>중단</button></div>
+    <div class="scenario-options"><label class="repeat-field" for="repeat">반복 횟수 <span class="number-control"><input type="number" id="repeat" value="1" min="1" max="50"><span>회</span></span></label><label class="toggle-row"><span>캐시 초기화</span><input type="checkbox" id="optCold" role="switch"></label></div>
+    <div id="scenarioEta" class="eta-state" role="status" hidden></div>
+    <div id="scnState" class="scenario-state" role="status"></div>
+    <div class="hint" id="sInfo" style="white-space:pre-wrap"></div>
+    <button id="viewCompletedComparison" class="completion-link" type="button" popovertarget="resultsSheet" hidden>자동 비교 기록 보기 <span aria-hidden="true">↗</span></button>
+    </div>
+  </section>
+  <footer class="results-dock">
+    <div class="dock-title"><h2 class="card-title"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M15 10v10M3 15h18"/></svg></span>측정 결과</h2><span id="count" class="record-count">0건</span></div>
+    <button class="results-open" popovertarget="resultsSheet">결과 보기 <span aria-hidden="true">↗</span></button>
+  </footer>
+</aside>
+<section id="resultsSheet" class="results-sheet" popover="auto" aria-labelledby="resultsTitle">
+  <header class="results-header"><h2 id="resultsTitle">측정 결과</h2><button class="close-button" popovertarget="resultsSheet" popovertargetaction="hide" aria-label="측정 결과 닫기">×</button></header>
+  <div class="record-tabs" role="tablist" aria-label="측정 기록 구분">
+    <button id="individualTab" class="record-tab" role="tab" aria-selected="true" aria-controls="individualPanel"><span class="tab-symbol" aria-hidden="true">↔</span><span><strong>개별 기록</strong><small>최근 100건</small></span><span id="individualCount" class="tab-count">0건</span></button>
+    <button id="comparisonTab" class="record-tab" role="tab" aria-selected="false" aria-controls="comparisonPanel" tabindex="-1"><span class="tab-symbol" aria-hidden="true">▥</span><strong>자동 비교 기록</strong><span id="comparisonCount" class="tab-count">0단계</span></button>
+  </div>
+  <div class="results-body">
+    <section id="individualPanel" class="record-panel individual-content" role="tabpanel" aria-labelledby="individualTab">
+      <div class="table-heading"><h3>개별 기록</h3><div class="export-actions"><button id="expXlsx">엑셀</button><button id="expCsv">CSV</button></div></div>
+      <div class="tbl"><table id="tbl"><thead><tr><th>번호</th><th>동작</th><th>배율</th><th>관로</th><th>캐시 초기화</th><th class="pipe-time">관로 표시 시간 ms</th><th title="이번 측정에서 집계한 관로 타일 요청 건수입니다. 빈 타일 응답도 포함합니다.">요청 수</th><th>전송 용량 MiB</th></tr></thead><tbody></tbody></table></div>
+      <div class="empty-state"><span aria-hidden="true">↔</span><strong>아직 개별 기록이 없습니다</strong></div>
+    </section>
+    <section id="comparisonPanel" class="record-panel summary-content" role="tabpanel" aria-labelledby="comparisonTab" hidden>
+      <div class="table-heading"><div class="comparison-heading"><h3>자동 비교 기록</h3><span id="comparisonSelection" class="selection-pill"></span></div><div class="export-actions"><button id="expSumXlsx">엑셀</button><button id="expSumCsv">CSV</button></div></div>
+      <div class="tbl"><table id="sumTbl"><thead><tr><th>단계</th><th>관로</th><th>캐시 초기화</th><th>반복</th><th class="pipe-time">관로 표시 시간 평균 ms</th><th>최소~최대 ms</th><th title="이번 측정에서 집계한 관로 타일 요청 건수입니다. 빈 타일 응답도 포함합니다.">요청 수</th><th>전송 용량 MiB</th></tr></thead><tbody></tbody></table></div>
+      <div class="empty-state"><span aria-hidden="true">▥</span><strong>아직 자동 비교 기록이 없습니다</strong></div>
+      <div class="hint" id="sumNote"></div>
+    </section>
+  </div>
+  <footer class="results-footer"><span id="saveState" class="hint" role="status"></span><button id="clearRec" class="danger-button">기록 비우기</button></footer>
+</section>
+<!-- Existing measurement controls are retained for app.js. -->
+<div hidden>
+  <input type="checkbox" id="optCard" checked>
+  <div id="last"></div>
+  <input id="runLabel" placeholder="파일명용"><textarea id="scenario" rows="9" spellcheck="false" aria-label="자동 측정 시나리오 JSON"></textarea>
+  <input type="number" id="pause" value="800" min="0" step="100"><input type="checkbox" id="optAnim" checked>
+</div>
+<script src="config.js"></script><script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script><script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz" crossorigin="anonymous" defer></script><script src="app.js"></script>
+<script>
+// Presentation only: keep the measurement event and recorded values unchanged.
+document.addEventListener('speed:end', function (event) {
+  if (event.detail.mode !== 'baseline' || event.detail.timeout) return;
+  const card = document.getElementById('card');
+  const value = card.querySelector('[data-k="big"]');
+  value.textContent = '선택된 관로 없음';
+  value.classList.add('empty');
+  card.querySelector('[data-k="sub"]').textContent = '';
+});
+// Result presentation only: translate rendered cells without changing records or exports.
+(function () {
+  const centerToggle = document.getElementById('optCenter');
+  const rangeToggle = document.getElementById('genScn');
+  rangeToggle.addEventListener('click', function () {
+    rangeToggle.setAttribute('aria-checked', 'true');
+  }, {capture: true});
+  new MutationObserver(function () {
+    if (!rangeToggle.disabled) rangeToggle.setAttribute('aria-checked', 'false');
+  }).observe(rangeToggle, {attributes: true, attributeFilter: ['disabled']});
+  let centerMarker;
+  function connectCenterToggle() {
+    if (!window.__app || !window.__app.ml) return;
+    centerToggle.disabled = false;
+    rangeToggle.disabled = false;
+    centerReady.disconnect();
+  }
+  const centerReady = new MutationObserver(connectCenterToggle);
+  centerReady.observe(document.getElementById('status'), {attributes: true, childList: true});
+  connectCenterToggle();
+  centerToggle.addEventListener('change', function () {
+    const map = window.__app && window.__app.ml;
+    if (!map) return;
+    if (centerToggle.checked && !centerMarker) {
+      // Same SEOUL boundary midpoint used by app.js buildPScenario; never recenter the map.
+      const latitude = (37.4338554 + 37.6939493) / 2;
+      const longitude = (126.7954714 + 127.2225354) / 2;
+      const markerElement = document.createElement('div');
+      markerElement.className = 'seoul-center-marker';
+      markerElement.setAttribute('aria-label', '서울 전체 기준 중앙');
+      markerElement.innerHTML = '<span class="center-point"></span><span class="center-caption">서울 중앙</span>';
+      centerMarker = new maplibregl.Marker({element: markerElement, anchor: 'center'}).setLngLat([longitude, latitude]);
+    }
+    if (centerMarker) {
+      if (centerToggle.checked) centerMarker.addTo(map);
+      else centerMarker.remove();
+    }
+  });
+  const tabs = [document.getElementById('individualTab'), document.getElementById('comparisonTab')];
+  function selectTab(index, focus) {
+    tabs.forEach(function (tab, i) {
+      tab.setAttribute('aria-selected', String(i === index));
+      tab.tabIndex = i === index ? 0 : -1;
+      document.getElementById(tab.getAttribute('aria-controls')).hidden = i !== index;
+    });
+    if (focus) tabs[index].focus();
+  }
+  tabs.forEach(function (tab, index) {
+    tab.addEventListener('click', function () { selectTab(index, false); });
+    tab.addEventListener('keydown', function (event) {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      selectTab(event.key === 'Home' ? 0 : event.key === 'End' ? 1 : 1 - index, true);
+    });
+  });
+  const individual = document.getElementById('tbl').tBodies[0];
+  const comparison = document.getElementById('sumTbl').tBodies[0];
+  const layerNames = {sa001: '서울시 상수관로', wtl_pipe_lm: '건기연 상수관로'};
+  function layerLabel(value) {
+    const raw = Array.isArray(value) ? value.join('+') : String(value || '');
+    if (!raw || raw === '–') return '선택된 관로 없음';
+    return raw.replace(/\b(sa001|wtl_pipe_lm)\b/g, function (id) { return layerNames[id]; });
+  }
+  function setText(element, value) {
+    if (element.textContent !== value) element.textContent = value;
+  }
+  function actionLabel(kind, zoomText) {
+    const operation = kind.split('/')[0].trim();
+    if (operation === 'pan') return '이동';
+    if (operation === 'zoom') {
+      const zoom = zoomText.match(/(-?\d+(?:\.\d+)?)\s*→\s*(-?\d+(?:\.\d+)?)/);
+      return zoom ? (+zoom[2] > +zoom[1] ? '확대' : +zoom[2] < +zoom[1] ? '축소' : '이동') : '확대/축소';
+    }
+    return operation;
+  }
+  function updateRecords() {
+    const app = window.__app;
+    const records = new Map(((app && app.records) || []).map(function (record) { return [String(record.id), record]; }));
+    Array.from(individual.rows).forEach(function (row) {
+      // 8 cells, built by app.js renderRecords in final order: id|action|zoom|layers|cache|pipe time(td.pipe-time)|requests|MiB
+      if (row.cells.length !== 8) return;
+      const zoomCell = row.cells[2];
+      if (!zoomCell.dataset.rawZoom) zoomCell.dataset.rawZoom = zoomCell.textContent;
+      const rawZoom = zoomCell.dataset.rawZoom;
+      setText(row.cells[1], actionLabel(row.cells[1].textContent, rawZoom));
+      setText(row.cells[3], layerLabel(row.cells[3].textContent));
+      const record = records.get(row.cells[0].textContent);
+      const reference = record && record.seoul_S != null ? record.seoul_S : app && app.S;
+      const zoom = rawZoom.match(/^(-?\d+(?:\.\d+)?)\s*→\s*(-?\d+(?:\.\d+)?)$/);
+      if (zoom) {
+        if (typeof reference === 'number' && Number.isFinite(reference)) {
+          const percent = function (value) { return Number((100 * Math.pow(2, Number(value) - reference)).toFixed(1)).toLocaleString('ko-KR') + '%'; };
+          const from = percent(zoom[1]), to = percent(zoom[2]);
+          setText(zoomCell, from === to ? from : from + ' → ' + to);
+        } else {
+          setText(zoomCell, '기준 미설정');
+        }
+      }
+    });
+    Array.from(comparison.rows).forEach(function (row) {
+      if (row.cells.length !== 8) return;
+      setText(row.cells[1], layerLabel(row.cells[1].textContent));
+    });
+    setText(document.getElementById('individualCount'), individual.rows.length + '건');
+    setText(document.getElementById('comparisonCount'), comparison.rows.length + '단계');
+    const selections = [...new Set(Array.from(comparison.rows)
+      .filter(function (row) { return row.cells.length === 8; })
+      .map(function (row) { return row.cells[1].textContent; }))];
+    setText(document.getElementById('comparisonSelection'), selections.join(' / '));
+  }
+  new MutationObserver(updateRecords).observe(individual, {childList: true, subtree: true, characterData: true});
+  new MutationObserver(updateRecords).observe(comparison, {childList: true, subtree: true, characterData: true});
+  updateRecords();
+
+  document.querySelectorAll('.collapse-button').forEach(function (button) {
+    const content = document.getElementById(button.getAttribute('aria-controls'));
+    const title = button.closest('section').querySelector('.lbl, h2').textContent;
+    button.addEventListener('click', function () {
+      const expanded = button.getAttribute('aria-expanded') !== 'true';
+      content.hidden = !expanded;
+      button.setAttribute('aria-expanded', String(expanded));
+      button.setAttribute('aria-label', title + ' 카드 ' + (expanded ? '접기' : '펼치기'));
+    });
+  });
+  // Anchor each explanation to its own card, including after scrolling/resizing.
+  function positionHelp(help) {
+    const tooltip = help.querySelector('.help-text');
+    const card = help.closest('section').getBoundingClientRect();
+    const gap = 14, margin = 16, width = Math.min(310, innerWidth - margin * 2);
+    tooltip.style.width = width + 'px';
+    const height = tooltip.getBoundingClientRect().height;
+    let left = card.left - width - gap;
+    let top = card.top;
+    if (left < margin) {
+      if (card.right + gap + width <= innerWidth - margin) left = card.right + gap;
+      else { left = margin; top = card.bottom + gap; }
+    }
+    tooltip.style.left = Math.max(margin, Math.min(left, innerWidth - width - margin)) + 'px';
+    tooltip.style.top = Math.max(margin, Math.min(top, innerHeight - height - margin)) + 'px';
+  }
+  const helps = [...document.querySelectorAll('#panel .help')];
+  helps.forEach(function (help) {
+    help.addEventListener('mouseenter', function () { positionHelp(help); });
+    help.addEventListener('focusin', function () { positionHelp(help); });
+    help.querySelector('.info-button').addEventListener('focus', function () { positionHelp(help); });
+    positionHelp(help);
+  });
+  function repositionHelp() { helps.filter(function (help) { return help.matches(':hover, :focus-within'); }).forEach(positionHelp); }
+  addEventListener('resize', repositionHelp);
+  document.getElementById('panel').addEventListener('scroll', repositionHelp);
+  // App-created inputs retain their original checked state and change handlers.
+  function decorateLayers() {
+    document.querySelectorAll('#layers .lyr input').forEach(function (input) {
+      input.setAttribute('role', 'switch');
+    });
+  }
+  new MutationObserver(decorateLayers).observe(document.getElementById('layers'), {childList: true});
+  decorateLayers();
+
+  const eta = document.getElementById('scenarioEta');
+  const completedLink = document.getElementById('viewCompletedComparison');
+  const sheet = document.getElementById('resultsSheet');
+  function duration(ms) {
+    const seconds = Math.ceil(ms / 1000);
+    return seconds < 60 ? seconds + '초' : Math.floor(seconds / 60) + '분 ' + (seconds % 60) + '초';
+  }
+  function validDuration(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  }
+  function showProgress(detail) {
+    const parts = [layerLabel(detail.layers)];
+    if (Number.isFinite(detail.completed_steps) && Number.isFinite(detail.total_steps)) {
+      parts.push(detail.completed_steps + ' / ' + detail.total_steps + '단계');
+    }
+    if (validDuration(detail.elapsed_ms)) parts.push('경과 ' + duration(detail.elapsed_ms));
+    // Only event data is displayed: no UI timer or synthetic estimate.
+    if (validDuration(detail.remaining_ms) && detail.remaining_ms > 0) {
+      parts.push('약 ' + duration(detail.remaining_ms) + ' 남음');
+    } else if (detail.completed_steps > 0 && detail.completed_steps === detail.total_steps) {
+      parts.push('마무리 중');
+    } else {
+      parts.push('예상시간 산정 중');
+    }
+    if (validDuration(detail.estimated_ms) && detail.estimated_ms > 0) {
+      parts.push('예상 전체 ' + duration(detail.estimated_ms));
+    }
+    setText(eta, parts.join(' · '));
+    eta.title = detail.estimate_basis == null ? '' : String(detail.estimate_basis);
+    eta.hidden = false;
+  }
+  function openComparison(focus) {
+    selectTab(1, false);
+    if (!sheet.matches(':popover-open')) sheet.showPopover();
+    if (focus) tabs[1].focus();
+  }
+  completedLink.addEventListener('click', function (event) {
+    event.preventDefault();
+    openComparison(true);
+  });
+  document.addEventListener('speed:scenario-start', function (event) {
+    completedLink.hidden = true;
+    showProgress(event.detail);
+  });
+  document.addEventListener('speed:scenario-progress', function (event) {
+    showProgress(event.detail);
+  });
+  document.addEventListener('speed:scenario-end', function (event) {
+    const detail = event.detail;
+    const normal = detail.stopped === false && !detail.error;
+    const parts = [detail.error ? '자동 비교 오류: ' + String(detail.error) : normal ? '자동 비교 완료' : '자동 비교 중단'];
+    parts.push(layerLabel(detail.layers));
+    if (validDuration(detail.elapsed_ms)) parts.push('경과 ' + duration(detail.elapsed_ms));
+    if (Number.isFinite(detail.records_count)) parts.push(detail.records_count + '건');
+    setText(eta, parts.join(' · '));
+    eta.hidden = false;
+    completedLink.hidden = !normal;
+    updateRecords();
+    if (normal) openComparison(true);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+logs/
+*.pid
+*.bak
+*.bak_*
+
+# 비밀 정보
+.env
+.env.local
+info.txt
+
+# 대용량 데이터 (서버에 별도 전송)
+backend/data/tiles_full/
