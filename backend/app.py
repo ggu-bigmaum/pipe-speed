@@ -203,6 +203,19 @@ def root_redirect():
     return Response(status=302, headers={"Location": "/app/"})
 
 
+@app.get("/app/config.js")
+def frontend_config_js():
+    """config.js 에 환경변수 값을 치환해서 서빙. 소스오브트루스 = NAVER_CLIENT_ID 환경변수(systemd EnvironmentFile 또는 .env). 깃엔 플레이스홀더만 들어감."""
+    try:
+        body = (FRONTEND / "config.js").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        abort(404)
+    body = body.replace("YOUR_NAVER_CLIENT_ID", os.environ.get("NAVER_CLIENT_ID", "YOUR_NAVER_CLIENT_ID"))
+    r = Response(body, mimetype="application/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    return r
+
+
 @app.get("/app/", defaults={"fname": "index.html"})
 @app.get("/app/<path:fname>")
 def frontend_static(fname):
