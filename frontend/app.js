@@ -1,4 +1,4 @@
-/* 상수관로 화면속도 측정 — 네이버 지도 JS v3(베이스) + MapLibre GL(벡터타일 오버레이, 카메라 동기화)
+/* 전국 상수관망 화면속도 측정 — 네이버 지도 JS v3(베이스) + MapLibre GL(벡터타일 오버레이, 카메라 동기화)
  *
  * 측정 시점 정의 (NOTES.md 와 동일)
  *  t0   : 조작 시작. 수동 = 네이버 zoomstart/dragstart/pinchstart(없으면 첫 카메라 변경 이벤트),
@@ -15,7 +15,7 @@
   const CFG = window.APP_CONFIG;
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const MAX_RECORDS = 100;   // 보관·표시 기록 최대 건수(사용자 결정 2026-10-28). 자동 시나리오 1회(14단계)×반복 7회=98건까지 한 실행이 온전히 남음
+  const MAX_RECORDS = 100;   // 보관·표시 기록 최대 건수(사용자 결정 2026-10-28). 전국판 자동 시나리오 1회(측정 24단계)×반복 4회=96건까지 한 실행이 온전히 남음
   const ORIGIN = CFG.API_BASE || location.origin;
 
   const state = {
@@ -152,7 +152,7 @@
     requestSync();
     if (!state.session && state.scn.running) return;   // 시나리오 실행 중 단계 사이의 잔여 카메라 이벤트는 측정 세션으로 만들지 않음
     if (!state.session) {
-      if (!anyOverlayOn() || state.inFindS || state.inMinZoom) return;   // 범위 맞추기(findS)·최소 줌(서울 전체) 적용으로 생긴 지도 이동은 측정 기록에서 제외   // 사용자 결정: 관로를 하나도 켜지 않으면 직접 조작 측정을 하지 않음(자동 시나리오는 시작 시 0개 차단)
+      if (!anyOverlayOn() || state.inFindS || state.inMinZoom) return;   // 범위 맞추기(findS)·최소 줌(전국 전체) 적용으로 생긴 지도 이동은 측정 기록에서 제외   // 사용자 결정: 관로를 하나도 켜지 않으면 직접 조작 측정을 하지 않음(자동 시나리오는 시작 시 0개 차단)
       beginSession('cam');
     }
     const s = state.session; s.camSeen = true; s.tN = null; s.armed = false;
@@ -214,9 +214,9 @@
     if (z < s.zmin) s.zmin = z; if (z > s.zmax) s.zmax = z;
     const tzA = tileZFor(s.zmin), tzB = tileZFor(s.zmax);
     const kind = s.target && s.target.kind ? s.target.kind : (Math.abs(z - s.from.zoom) > 0.01 ? 'zoom' : 'pan');
-    // 배율 기준 S: '서울 전체 범위 맞추기'(findS) 결과 우선, 없으면 지도 크기로 계산한 S_auto. 배율% = 100*2^(zoom-S), zoom 은 기록값(소수 2자리)
-    const seoulS = state.S || state.S_auto || null, zFrom = +s.from.zoom.toFixed(2), zTo = +z.toFixed(2);
-    const scalePct = (v) => seoulS == null ? null : +(100 * Math.pow(2, v - seoulS)).toFixed(1);
+    // 배율 기준 S: '전국 범위 맞추기'(findS) 결과 우선, 없으면 지도 크기로 계산한 S_auto. 배율% = 100*2^(zoom-S), zoom 은 기록값(소수 2자리)
+    const baseS = state.S || state.S_auto || null, zFrom = +s.from.zoom.toFixed(2), zTo = +z.toFixed(2);
+    const scalePct = (v) => baseS == null ? null : +(100 * Math.pow(2, v - baseS)).toFixed(1);
     const rec = {
       id: ++state.seq, time: s.wall, trigger: s.trigger, step: s.target && s.target.name || '', run: s.target && s.target.run || null,
       kind, mode: s.layers.length ? 'tile' : 'baseline', layers: s.layers.join('+'),
@@ -228,8 +228,8 @@
       viewport: $('stage').clientWidth + 'x' + $('stage').clientHeight, dpr: devicePixelRatio,
       zoom_from: zFrom, zoom_to: zTo, zoom_min: +s.zmin.toFixed(2), zoom_max: +s.zmax.toFixed(2),
       tile_z_expected: fmtRange(tzA, tzB), tile_z_final: tileZFor(z), tile_z_requested: [...new Set(tiles.map((t) => t.z).filter((x) => x != null))].sort((a, b) => a - b).join('|'),
-      overlay_empty_final: tileZFor(z) == null, seoul_S: seoulS,
-      seoul_S_basis: state.S ? 'findS' : (state.S_auto ? 'auto' : null), scale_pct_from: scalePct(zFrom), scale_pct_to: scalePct(zTo),
+      overlay_empty_final: tileZFor(z) == null, nation_S: baseS,
+      nation_S_basis: state.S ? 'findS' : (state.S_auto ? 'auto' : null), scale_pct_from: scalePct(zFrom), scale_pct_to: scalePct(zTo),
       total_ms: +(tEnd - s.t0).toFixed(1), naver_ms: s.tN != null ? +(s.tN - s.t0).toFixed(1) : null,
       overlay_ms: s.tN != null ? +(tEnd - s.tN).toFixed(1) : null, timeout: !!timeout, events: s.events,
       tile_requests: nTile, tile_data_requests: emptyReq == null ? null : nTile - emptyReq, tile_empty_requests: emptyReq, tile_gzip_kb: gzipKb, load_done_from_t0_ms: loadDone, excluded_prestart: s.trigger === 'cam' && !!state.inFindS, tile_kb: bytes == null ? null : +(bytes / 1024).toFixed(1),
@@ -457,42 +457,52 @@
       ? saveFile(name, () => xlsxFrom(snap, sheetName), XLSX_TYPE, '엑셀 통합 문서', '.xlsx')
       : saveFile(name, () => csvFrom(snap), 'text/csv', 'CSV', '.csv');
   }
-  $('expXlsx').onclick = () => exportTable('tbl', '개별 기록', '관로표시시간_개별기록', 'xlsx');
-  $('expCsv').onclick = () => exportTable('tbl', '개별 기록', '관로표시시간_개별기록', 'csv');
-  $('expSumXlsx').onclick = () => exportTable('sumTbl', '자동 비교 기록', '관로표시시간_자동비교', 'xlsx');
-  $('expSumCsv').onclick = () => exportTable('sumTbl', '자동 비교 기록', '관로표시시간_자동비교', 'csv');
+  $('expXlsx').onclick = () => exportTable('tbl', '개별 기록', '상수관망표시시간_개별기록', 'xlsx');
+  $('expCsv').onclick = () => exportTable('tbl', '개별 기록', '상수관망표시시간_개별기록', 'csv');
+  $('expSumXlsx').onclick = () => exportTable('sumTbl', '자동 비교 기록', '상수관망표시시간_자동비교', 'xlsx');
+  $('expSumCsv').onclick = () => exportTable('sumTbl', '자동 비교 기록', '상수관망표시시간_자동비교', 'csv');
   $('clearRec').onclick = () => { state.records = []; renderRecords(); };
 
   /* ---------- 자동 시나리오 ---------- */
-  // 기본 시나리오는 init() 에서 P 정의로 설정(SEOUL 상수 초기화 이후)
-  const SEOUL = [126.7954714, 37.4338554, 127.2225354, 37.6939493]; // 백엔드 meta bounds (W,S,E,N)
-  async function findS() { // 현재 창/스테이지에서 서울 bounds 가 모두 들어오는 가장 큰 네이버 정수 zoom
-    const n = state.nmap, c = new naver.maps.LatLng((SEOUL[1] + SEOUL[3]) / 2, (SEOUL[0] + SEOUL[2]) / 2);
+  // 기본 시나리오는 init() 에서 P 정의로 설정(NATION 범위 확정 이후)
+  // 전국 범위 (W,S,E,N). 기본값 = 원본 범위 EPSG:32652 117113,3667208 ~ 669285,4270842 를 pyproj 로 WGS84 변환(경계 200점 조밀화)한 값.
+  // 서버 /tiles/kict_national/meta.json 의 bounds 가 있으면 init() 에서 그 값으로 교체(applyMetaBounds).
+  const NATION = [124.6097386, 33.0760890, 130.9431853, 38.5860523];
+  function applyMetaBounds(m) {
+    let b = m && m.bounds;
+    if (typeof b === 'string') b = b.split(',').map(Number);
+    if (Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[0] < b[2] && b[1] < b[3]) { for (let i = 0; i < 4; i++) NATION[i] = +b[i]; state.boundsSrc = 'meta'; }
+    else state.boundsSrc = 'default';
+  }
+  const nationCenter = () => [(NATION[1] + NATION[3]) / 2, (NATION[0] + NATION[2]) / 2];   // [lat, lng]
+  window.__nationCenter = nationCenter;   // index.html 중앙지점 표시용(읽기 전용)
+  async function findS() { // 현재 창/스테이지에서 전국 bounds 가 모두 들어오는 가장 큰 네이버 정수 zoom
+    const n = state.nmap, c = new naver.maps.LatLng(nationCenter()[0], nationCenter()[1]);
     n.setOptions('minZoom', 6);
     for (let z = 15; z >= 6; z--) {
       n.setCenter(c); n.setZoom(z, false); await sleep(500);
       const b = n.getBounds();
-      if (b.hasLatLng(new naver.maps.LatLng(SEOUL[1], SEOUL[0])) && b.hasLatLng(new naver.maps.LatLng(SEOUL[3], SEOUL[2]))) return z;
+      if (b.hasLatLng(new naver.maps.LatLng(NATION[1], NATION[0])) && b.hasLatLng(new naver.maps.LatLng(NATION[3], NATION[2]))) return z;
     }
     return null;
   }
-  // 지도를 움직이지 않고(카메라 불변) 현재 네이버 지도 컨테이너 크기로 서울 bounds 가 모두 들어가는 가장 큰 정수 네이버 zoom(S_auto).
+  // 지도를 움직이지 않고(카메라 불변) 현재 네이버 지도 컨테이너 크기로 전국 bounds 가 모두 들어가는 가장 큰 정수 네이버 zoom(S_auto).
   // 가정: 네이버 zoom z 의 세계 폭 = 256*2^z px (웹메르카토르, syncNow 의 MapLibre m=z-1·tileSize 512 와 같은 가정). 범위는 findS 와 같은 6~15.
-  function seoulFitZoom(w, h) {
+  function nationFitZoom(w, h) {
     if (!(w > 0 && h > 0)) return null;
     const mx = (lon) => (lon + 180) / 360;
     const my = (lat) => { const p = lat * Math.PI / 180; return (1 - Math.log(Math.tan(p) + 1 / Math.cos(p)) / Math.PI) / 2; };
-    const fw = mx(SEOUL[2]) - mx(SEOUL[0]), fh = my(SEOUL[1]) - my(SEOUL[3]);   // 세계 폭 1 기준 서울 bounds 폭·높이
+    const fw = mx(NATION[2]) - mx(NATION[0]), fh = my(NATION[1]) - my(NATION[3]);   // 세계 폭 1 기준 전국 bounds 폭·높이
     for (let z = 15; z >= 6; z--) { const ws = 256 * Math.pow(2, z); if (fw * ws <= w && fh * ws <= h) return z; }
     return null;
   }
   function updateSAuto() {
     const el = $('naver') || $('stage'), w = el ? el.clientWidth : 0, h = el ? el.clientHeight : 0;
-    state.S_auto = seoulFitZoom(w, h);
+    state.S_auto = nationFitZoom(w, h);
     state.S_autoView = { stage: [w, h], win: [innerWidth, innerHeight], dpr: devicePixelRatio };
     return state.S_auto;
   }
-  // 사용자 요청(2026-10-28): 서울 전체보다 더 축소하지 못하게 네이버 minZoom = 실측 S(범위 맞추기) 우선, 없으면 S_auto, 둘 다 없으면 6(기존값).
+  // 사용자 요청(2026-10-28): 전국 전체보다 더 축소하지 못하게 네이버 minZoom = 실측 S(범위 맞추기) 우선, 없으면 S_auto, 둘 다 없으면 6(기존값).
   // findS 탐색 중(minZoom 6 으로 내려 지도를 움직임)에는 건드리지 않고, applyS 가 끝난 뒤 다시 호출된다.
   // 현재 줌이 새 minZoom 보다 작아 지도가 확대되면 그 줌 변화는 측정 기록에서 제외(state.inMinZoom, onCamChange·zoomstart 가드).
   function minZoomTarget() { return state.S || state.S_auto || 6; }
@@ -512,21 +522,27 @@
     const done = () => { clearTimeout(state.minZoomTimer); state.inMinZoom = false; };
     naver.maps.Event.once(n, 'idle', done); state.minZoomTimer = setTimeout(done, 1500);
   }
-  // 새 정의(사용자 확정): 확대 = S→18 한 번에 +1 줌(7단계), 축소 = 18→S 한 번에 -1 줌(7단계),
-  // 이동 = 줌 13/15/17 에서 스테이지 폭 50% 동쪽 1회(거리는 네이버 투영으로 계산, 이동 후 복귀는 측정 제외). 중심은 서울 bounds 중심.
-  const DISTRICTS = { '강북구': [37.6397, 127.0256], '강남구': [37.5172, 127.0473], '강동구': [37.5301, 127.1238], '강서구': [37.5510, 126.8495] };
-  // 사용자 확정 시나리오(P): 100%=서울 전체(줌 S) 즉시 진입(대전→서울, morph 끔), 확대 200~1600%(줌 S+1~S+4), 축소 역순,
-  // 이동=400%(줌 S+2) 고정, 서울 중앙→강북구→강남구→강동구→강서구→서울 중앙. 배율은 S=100%, +1줌=x2. step 이름은 표에 그대로 쓰임.
+  // 전국판 시나리오(사용자 확정 2026-11-02). 배율% = 100*2^(줌-S), S = 전국 전체 줌(1920x1080 에서 7).
+  // 서울 중앙 = 서울판 frontend/app.js 의 SEOUL bounds(468행) 중심(521행 lat/lng) 그대로 → 3200% 이상 화면이 서울판 측정 화면과 같음.
+  const SEOUL_CENTER = [(37.4338554 + 37.6939493) / 2, (126.7954714 + 127.2225354) / 2];   // [lat, lng] = 37.56390235, 127.0090034
+  // 이동 지점 = 각 시청(사용자 제공 좌표)
+  const CITIES = { '서울': SEOUL_CENTER, '부산': [35.1798, 129.0750], '대구': [35.8714, 128.6014], '광주': [35.1601, 126.8514], '대전': [36.3504, 127.3845] };
+  const ZOOM_STEPS = 9;   // 100% → 51200% (2^9)
+  const MOVE_STEP = 5;    // 이동 배율 3200% (2^5)
+  // 1) 100% = 전국 중심·전국 전체(줌 S) 즉시 진입(morph 끔). 2) 확대 200~51200%(줌 S+1~S+9, 중심 서울 중앙), 축소 역순으로 100%(전국 중심)까지.
+  // 3) 서울 중앙 3200%(줌 S+5) 진입(측정 제외) 후 서울→부산→대구→광주→대전→서울 이동 5회. step 이름은 표에 그대로 쓰임.
+  //    이동 단계는 애니메이션 없이 바로 이동(animate:false → runStep 의 setCenter, 사용자 결정 2026-11-02 "바로 넘어가게"). 다섯 도시 모두 이동 직후부터 타일을 받는 같은 조건.
   function buildPScenario(S) {
-    const lat = (SEOUL[1] + SEOUL[3]) / 2, lng = (SEOUL[0] + SEOUL[2]) / 2, st = [];
+    const nc = nationCenter(), st = [];
     const pct = (z) => (100 * Math.pow(2, z - S));
-    st.push({ name: '준비 대전', lat: 36.35, lng: 127.38, zoom: S, measure: false, animate: false });
-    st.push({ name: '100%', lat, lng, zoom: S, animate: false });
-    for (let z = S + 1; z <= S + 4; z++) st.push({ name: '확대 ' + pct(z) + '%', lat, lng, zoom: z });
-    for (let z = S + 3; z >= S; z--) st.push({ name: '축소 ' + pct(z) + '%', lat, lng, zoom: z });
-    st.push({ name: '준비 이동', lat, lng, zoom: S + 2, measure: false });
-    ['강북구', '강남구', '강동구', '강서구'].forEach((g) => st.push({ name: '이동 ' + g, lat: DISTRICTS[g][0], lng: DISTRICTS[g][1], zoom: S + 2, reportMove: true }));
-    st.push({ name: '이동 서울 중앙', lat, lng, zoom: S + 2, reportMove: true });
+    const at = (z) => z === S ? { lat: nc[0], lng: nc[1] } : { lat: SEOUL_CENTER[0], lng: SEOUL_CENTER[1] };
+    st.push({ name: '준비 이동 전', lat: 36.35, lng: 127.38, zoom: S + 1, measure: false, animate: false });
+    st.push({ name: '100%', lat: nc[0], lng: nc[1], zoom: S, animate: false });
+    for (let z = S + 1; z <= S + ZOOM_STEPS; z++) st.push(Object.assign({ name: '확대 ' + pct(z) + '%', zoom: z }, at(z)));
+    for (let z = S + ZOOM_STEPS - 1; z >= S; z--) st.push(Object.assign({ name: '축소 ' + pct(z) + '%', zoom: z }, at(z)));
+    const zm = S + MOVE_STEP, mp = pct(zm);
+    st.push({ name: '준비 이동 ' + mp + '% 서울', lat: SEOUL_CENTER[0], lng: SEOUL_CENTER[1], zoom: zm, measure: false, animate: false });
+    ['부산', '대구', '광주', '대전', '서울'].forEach((g) => st.push({ name: '이동 ' + mp + '% ' + g, lat: CITIES[g][0], lng: CITIES[g][1], zoom: zm, reportMove: true, animate: false }));
     return st;
   }
   // 시나리오 생성(genScn·init·자동 실행 기준 줌 맞춤 공용). state.scnGen = 마지막 생성 {kind, S, str(텍스트 상자 값)}
@@ -551,11 +567,11 @@
       if (S != null) { state.S = S; state.SView = { stage: [$('stage').clientWidth, $('stage').clientHeight], win: [innerWidth, innerHeight], dpr: devicePixelRatio }; }
     } finally { state.inFindS = false; applyMinZoom(); }
     if (S == null) return null;
-    $('sInfo').textContent = '서울 전체 기준 줌 S=' + S + ' (스테이지 ' + state.SView.stage.join('x') + '). 지도 minZoom=' + S + '(이보다 축소 불가). 창 크기가 바뀌면 S 가 달라질 수 있으니 다시 탐색하세요.';
+    $('sInfo').textContent = '전국 전체 기준 줌 S=' + S + ' (스테이지 ' + state.SView.stage.join('x') + '). 지도 minZoom=' + S + '(이보다 축소 불가). 창 크기가 바뀌면 S 가 달라질 수 있으니 다시 탐색하세요.';
     return S;
   }
   $('genScn').onclick = async () => {
-    $('genScn').disabled = true; $('scnState').textContent = '서울 전체 줌(S) 탐색 중…';
+    $('genScn').disabled = true; $('scnState').textContent = '전국 전체 줌(S) 탐색 중…';
     let S = null;
     try { S = await applyS(); } catch (e) { console.warn('범위 맞추기 실패', e); } finally { $('genScn').disabled = false; }   // 예외여도 버튼 복구(minZoom 은 applyS finally 에서 복원)
     if (S == null) { $('scnState').textContent = '범위 맞추기 실패'; return; }
@@ -694,11 +710,11 @@
       return { meta: m, srcLayer: sl, ok: true };
     } catch (e) { return { meta: { error: String(e) }, srcLayer: id, ok: false }; }
   }
-  async function buildLayerUi() {
+  async function buildLayerUi(pre) {
     const box = $('layers');
     for (const c of CFG.LAYERS) {
-      const info = await loadMeta(c.id);
-      state.layers[c.id] = { on: !!info.ok, meta: info.meta, srcLayer: info.srcLayer };   // 사용자 결정: 관로 두 개 기본 켜짐(메타 조회 실패 시만 끔)
+      const info = (pre && pre[c.id]) || await loadMeta(c.id);
+      state.layers[c.id] = { on: !!info.ok, meta: info.meta, srcLayer: info.srcLayer };   // 관로 기본 켜짐(메타 조회 실패 시만 끔)
       const row = document.createElement('label'); row.className = 'lyr';
       row.innerHTML = '<input type="checkbox"><span class="sw" style="background:' + c.color + '"></span><span>' + c.label + '</span>';
       state.layers[c.id].cb = row.firstChild; row.firstChild.checked = state.layers[c.id].on;
@@ -726,7 +742,7 @@
   }
   async function probeHeaders() { // 실제 타일 응답 헤더(캐시 정책 등) 1회 확인. 내부 측정 로그에는 넣지 않음
     try {
-      const z = 15, x = 27947, y = 12682, r = await fetch(ORIGIN + '/tiles/' + CFG.LAYERS[0].id + '/' + z + '/' + x + '/' + y + '.pbf', { cache: 'no-store' });
+      const z = 8, c = nationCenter(), x = Math.floor((c[1] + 180) / 360 * 256), y = Math.floor((1 - Math.log(Math.tan(c[0] * Math.PI / 180) + 1 / Math.cos(c[0] * Math.PI / 180)) / Math.PI) / 2 * 256), r = await fetch(ORIGIN + '/tiles/' + CFG.LAYERS[0].id + '/' + z + '/' + x + '/' + y + '.pbf', { cache: 'no-store' });
       state.tileHeaders = { sample: z + '/' + x + '/' + y, status: r.status, cacheControl: r.headers.get('cache-control'), contentEncoding: r.headers.get('content-encoding'), xServerMs: r.headers.get('x-server-ms') };
       await r.arrayBuffer();
     } catch (e) { state.tileHeaders = { error: String(e) }; }
@@ -736,11 +752,14 @@
     try { new PerformanceObserver((l) => l.getEntries().forEach((e) => state.longtasks.push({ start: e.startTime, dur: e.duration }))).observe({ entryTypes: ['longtask'] }); } catch (e) { /* 미지원 */ }
     await loadNaver();
     if (!window.naver || !naver.maps) throw new Error('naver.maps 미정의');
-    // 최소 줌 = 서울 전체가 들어오는 줌(S_auto, 지도 이동 없는 계산). 초기 줌이 그보다 작으면 minZoom 으로 올림
-    const mz0 = updateSAuto() || 6;
-    state.nmap = new naver.maps.Map('naver', { center: new naver.maps.LatLng(CFG.DEFAULT_CENTER[0], CFG.DEFAULT_CENTER[1]), zoom: Math.max(CFG.DEFAULT_ZOOM, mz0), minZoom: mz0, maxZoom: 21 });
+    // 전국 범위: 서버 meta.json bounds 우선(없으면 NATION 기본값). 지도 생성 전에 확정해야 S_auto·첫 화면이 맞음
+    const pre = {}; for (const c of CFG.LAYERS) pre[c.id] = await loadMeta(c.id);
+    applyMetaBounds(pre[CFG.LAYERS[0].id].ok ? pre[CFG.LAYERS[0].id].meta : null);
+    // 최소 줌 = 전국 전체가 들어오는 줌(S_auto, 지도 이동 없는 계산). 첫 화면 = 전국 중심 + S_auto(전국 전체)
+    const mz0 = updateSAuto() || 6, c0 = nationCenter();
+    state.nmap = new naver.maps.Map('naver', { center: new naver.maps.LatLng(c0[0], c0[1]), zoom: state.S_auto || CFG.DEFAULT_ZOOM, minZoom: mz0, maxZoom: 21 });
     initOverlay();
-    await buildLayerUi();
+    await buildLayerUi(pre);
     if (!state.ml.isStyleLoaded()) await new Promise((r) => state.ml.once('load', r));   // 기본 켜짐 관로를 지도에 올리기 전 스타일 로드 대기
     for (const id of Object.keys(state.layers)) if (state.layers[id].on) addTileLayer(id);
     const E = naver.maps.Event, n = state.nmap;
@@ -757,7 +776,7 @@
     probeRaf(); probeHeaders();
     window.addEventListener('resize', () => { try { n.autoResize && n.autoResize(); } catch (e) { /* noop */ } state.ml.resize();
       if (state.SView && ($('stage').clientWidth !== state.SView.stage[0] || $('stage').clientHeight !== state.SView.stage[1])) $('sInfo').textContent += '\n⚠ 스테이지 크기가 S 탐색 시점(' + state.SView.stage.join('x') + ')과 달라짐: S 재탐색 필요.'; });
-    setScenario('new', state.S || state.S_auto || 11);  // 새 정의 기본: 현재 기준 줌(S_auto, 없으면 11). '범위 맞추기'로 갱신, 자동 실행 시 기준 줌이 바뀌었으면 다시 맞춤
+    setScenario('new', state.S || state.S_auto || 7);  // 기본: 현재 기준 줌(S_auto, 없으면 7). '범위 맞추기'로 갱신, 자동 실행 시 기준 줌이 바뀌었으면 다시 맞춤
     { const lc = document.getElementById('optLiveCold'), lb = lc && lc.closest('label'); if (lb) lb.hidden = false; }   // 검증 후 노출(직접 조작 측정마다 캐시 초기화 토글)
     state.ready = true;
     setStatus('준비됨 · 네이버 지도 v' + (naver.maps.VERSION || '?') + ' + MapLibre ' + state.mlVersion + ' · ' + location.origin, 'ok');

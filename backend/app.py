@@ -6,8 +6,8 @@
 
 실행: PYTHONUTF8=1 [BACKEND_HOST=0.0.0.0] [BACKEND_PORT=8000] python app.py     (의존: Flask, flask-cors, waitress)
  - BACKEND_HOST 기본 127.0.0.1(이 PC 전용, 가능하면 ::1 도 함께 수신). 외부 접속을 허용하려면 0.0.0.0.
- - 타일 폴더: data/tiles_full/{layer}/{z}/{x}/{y}.pbf 하나만 있어도 동작. (선택) data/tiles, data/tiles_low 가 있으면 tiles_full 에
-   없는 줌에 한해 기존 타일을 서빙하며, 없으면 해당 줌은 204(빈 타일).
+ - 전국 타일 폴더: data/tiles_national/kict_national/{z}/{x}/{y}.pbf (z6~z17). 없는 타일은 204(빈 타일).
+ - (선택) 서울 타일 data/tiles_full/{sa001,wtl_pipe_lm}/... 는 이 저장소에 없음. 없으면 서울 meta.json 은 404, 서울 타일은 204.
  - 프론트 폴더: frontend/ (환경변수 FRONTEND_DIR 로 지정 가능, 기본은 backend/frontend 또는 ../frontend)
 """
 import os, json, gzip, time, threading, socket
@@ -29,6 +29,14 @@ BOUNDS = {"sa001": [126.7954714, 37.4338554, 127.2225354, 37.6939493],
 FIELDS = {"sa001": {"PLINE_ID": "String", "PLINE_CALB": "Number", "PLINE_MTRQ": "String"},
           "wtl_pipe_lm": {"FTR_IDN": "Number", "STD_DIP": "Number", "MOP_CDE": "String"}}
 ZOOMS = range(0, 18)
+
+# 전국 상수관망(건기연상수관망.gpkg): 추가 레이어. 서울 레이어(sa001, wtl_pipe_lm)와 별개 경로(data/tiles_national).
+NATIONAL = ROOT / "data" / "tiles_national"
+NAT_LAYER = "kict_national"
+NAT_COUNT = 4440047
+NAT_BOUNDS = [124.6097386, 33.0760890, 130.9431853, 38.5860523]  # 원본 UTM52N 범위(117113,3667208~669285,4270842)를 WGS84로 변환(약간 넉넉할 수 있음)
+NAT_FIELDS = {"FTR_IDN": "Number", "STD_DIP": "Number", "MOP_CDE": "String"}
+NAT_SIMPLIFIED_ZOOMS = [6, 7, 8, 9, 10]  # 이 줌은 짧은 선 탈락·MAX_SIZE 5MB 상한 적용(간략화), 11 이상은 원본 전량
 
 _fe = os.environ.get("FRONTEND_DIR")
 FRONTEND = Path(_fe) if _fe else (ROOT / "frontend" if (ROOT / "frontend").is_dir() else ROOT.parent / "frontend")
@@ -52,7 +60,32 @@ def _zoom_dirs(layer):
     return full, legacy
 
 
+def _meta_national():
+    have = sorted(z for z in ZOOMS if (NATIONAL / NAT_LAYER / str(z)).is_dir())
+    if not have:
+        abort(404)
+    return {
+        "layer": NAT_LAYER,
+        "source": "건기연상수관망.gpkg/_",
+        "bounds": NAT_BOUNDS,
+        "minzoom": have[0],
+        "maxzoom": have[-1],
+        "count": NAT_COUNT,
+        "tile_url": f"{request.host_url.rstrip('/')}/tiles/{NAT_LAYER}/{{z}}/{{x}}/{{y}}.pbf",
+        "scheme": "xyz",
+        "tile_extent": 4096,
+        "vector_layer_id": NAT_LAYER,
+        "fields": NAT_FIELDS,
+        # 간략화 줌(전량 아님) / 전량 보존 줌(원본 선 모두 포함, 격자보다 짧은 선은 최소 길이 선으로 표현)
+        "simplified_zooms": [z for z in NAT_SIMPLIFIED_ZOOMS if z in have],
+        "full_zooms": [z for z in have if z not in NAT_SIMPLIFIED_ZOOMS],
+        "available_zooms": have,
+    }
+
+
 def _meta(layer):
+    if layer == NAT_LAYER:
+        return _meta_national()
     if layer not in LAYERS:
         abort(404)
     full, legacy = _zoom_dirs(layer)
@@ -95,11 +128,15 @@ def meta(layer):
 @app.get("/tiles/<layer>/<int:z>/<int:x>/<int:y>.pbf")
 def tile(layer, z, x, y):
     t0 = time.perf_counter()
-    if layer not in LAYERS:
+    if layer == NAT_LAYER:  # 전국: 간략화 줌(z6~10)은 'simplified', 그 외 'full'
+        full = z not in NAT_SIMPLIFIED_ZOOMS
+        p = NATIONAL / layer / str(z) / str(x) / f"{y}.pbf"
+    elif layer in LAYERS:
+        # tiles_full 에 해당 줌 폴더가 있으면 그것을, 없으면 (있다면) 기존 타일(일부 선 누락)을, 둘 다 없으면 204.
+        full = (TILES_FULL / layer / str(z)).is_dir()
+        p = (TILES_FULL if full else (TILES if z >= 12 else TILES_LOW)) / layer / str(z) / str(x) / f"{y}.pbf"
+    else:
         abort(404)
-    # tiles_full 에 해당 줌 폴더가 있으면 그것을, 없으면 (있다면) 기존 타일(일부 선 누락)을, 둘 다 없으면 204.
-    full = (TILES_FULL / layer / str(z)).is_dir()
-    p = (TILES_FULL if full else (TILES if z >= 12 else TILES_LOW)) / layer / str(z) / str(x) / f"{y}.pbf"
     try:
         with open(p, "rb") as f:
             data = f.read()  # gzip 사전압축된 MVT
@@ -122,7 +159,7 @@ def tile(layer, z, x, y):
     r.headers["Cache-Control"] = "no-store"  # 측정 왜곡 방지(브라우저 캐시 사용 안 함)
     r.headers["X-Server-Ms"] = f"{ms:.3f}"
     r.headers["X-Tile-Bytes"] = str(len(body))
-    r.headers["X-Tile-Set"] = "full" if full else "legacy-incomplete"
+    r.headers["X-Tile-Set"] = ("full" if full else "simplified") if layer == NAT_LAYER else ("full" if full else "legacy-incomplete")
     r.headers["Server-Timing"] = f"read;dur={(t_read-t0)*1000:.3f}, total;dur={ms:.3f}"
     log_req(request.path, 200, len(body), ms, f"read_ms={(t_read-t0)*1000:.3f};enc={enc or 'identity'}")
     return r
@@ -138,6 +175,19 @@ def root_redirect():
 def frontend_static(fname):
     """frontend/ 정적 서빙. 같은 포트에서 페이지와 타일을 함께 제공."""
     r = send_from_directory(FRONTEND, fname)
+    r.headers["Cache-Control"] = "no-cache"
+    return r
+
+
+_fn = os.environ.get("FRONTEND_NATIONAL_DIR")
+FRONTEND_NATIONAL = Path(_fn) if _fn else (ROOT / "frontend_national" if (ROOT / "frontend_national").is_dir() else ROOT.parent / "frontend_national")
+
+
+@app.get("/national/", defaults={"fname": "index.html"})
+@app.get("/national/<path:fname>")
+def national_static(fname):
+    """frontend_national/ 정적 서빙(전국 사이트). 서울 사이트(/app/)와 별개."""
+    r = send_from_directory(FRONTEND_NATIONAL, fname)
     r.headers["Cache-Control"] = "no-cache"
     return r
 

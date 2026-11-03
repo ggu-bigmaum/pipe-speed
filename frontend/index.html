@@ -2,22 +2,22 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>서울 상수관로 화면속도 측정</title>
+<title>전국 상수관망 화면속도 측정</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main id="stage" aria-label="상수관로 지도">
+<main id="stage" aria-label="상수관망 지도">
   <div id="naver"></div><div id="ml"></div>
   <div id="hud" class="mono small" hidden></div>
   <div id="authmsg" hidden></div>
 </main>
 <header class="banner">
-  <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 8h10v8h12M5 24h10v-8" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="8" r="3" fill="currentColor"/><circle cx="5" cy="24" r="3" fill="currentColor"/><circle cx="27" cy="16" r="3" fill="currentColor"/></svg></span><h1>서울 상수관로 화면속도</h1></div>
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 8h10v8h12M5 24h10v-8" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="8" r="3" fill="currentColor"/><circle cx="5" cy="24" r="3" fill="currentColor"/><circle cx="27" cy="16" r="3" fill="currentColor"/></svg></span><h1>전국 상수관망 화면속도</h1></div>
   <div class="top-controls"><div class="map-toggle-column">
-  <label class="toggle-row center-toggle" title="서울 전체 경계의 고정 중앙지점 표시"><span>중앙지점 표시</span><input type="checkbox" id="optCenter" role="switch" disabled></label>
-  <button id="genScn" class="range-toggle" type="button" role="switch" aria-checked="false" title="현재 지도 크기에 맞춰 서울 전체 범위를 다시 설정합니다. 완료되면 토글이 꺼집니다." disabled><span>서울 전체 범위 맞추기</span><span class="switch-track" aria-hidden="true"></span></button>
+  <label class="toggle-row center-toggle" title="전국 범위의 고정 중앙지점 표시"><span>중앙지점 표시</span><input type="checkbox" id="optCenter" role="switch" disabled></label>
+  <button id="genScn" class="range-toggle" type="button" role="switch" aria-checked="false" title="현재 지도 크기에 맞춰 전국 범위를 다시 설정합니다. 완료되면 토글이 꺼집니다." disabled><span>전국 범위 맞추기</span><span class="switch-track" aria-hidden="true"></span></button>
   </div><div class="layer-control"><div id="layers"></div></div></div>
   <div id="status" class="status" role="status">초기화 중…</div>
 </header>
@@ -32,7 +32,7 @@
     </div>
   </section>
   <section class="scenario-card">
-    <div class="card-heading"><h2 class="card-title"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H8a4 4 0 0 0-4 4v1M17 4l3 3-3 3M4 17h12a4 4 0 0 0 4-4v-1M7 20l-3-3 3-3"/></svg></span>자동으로 비교하기</h2><div class="card-actions"><span class="help"><button class="info-button" type="button" aria-label="자동 시나리오 측정 조건" aria-describedby="scenarioHelp">i</button><span id="scenarioHelp" class="help-text" role="tooltip"><strong>자동 비교</strong>선택한 관로를 설정한 횟수만큼 반복 측정합니다.<br><br>서울 전체를 100%로 하여 200·400·800·1600% 순서로 확대한 뒤 역순으로 축소하고, 400%에서 강북구·강남구·강동구·강서구·서울 중앙으로 이동합니다.<br><br>캐시 초기화를 켜면 단계마다 관로 타일을 새로 요청합니다.</span></span><button class="collapse-button" type="button" aria-label="자동으로 비교하기 카드 접기" aria-expanded="true" aria-controls="autoCardContent"><span aria-hidden="true">⌃</span></button></div></div>
+    <div class="card-heading"><h2 class="card-title"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H8a4 4 0 0 0-4 4v1M17 4l3 3-3 3M4 17h12a4 4 0 0 0 4-4v-1M7 20l-3-3 3-3"/></svg></span>자동으로 비교하기</h2><div class="card-actions"><span class="help"><button class="info-button" type="button" aria-label="자동 시나리오 측정 조건" aria-describedby="scenarioHelp">i</button><span id="scenarioHelp" class="help-text" role="tooltip"><strong>자동 비교</strong>선택한 관로를 설정한 횟수만큼 반복 측정합니다.<br><br>전국 전체가 보이는 화면을 100%로 하여, 서울 중앙에서 200%부터 51200%까지 2배씩 확대한 뒤 역순으로 100%까지 축소합니다.<br><br>그다음 3200%로 서울 중앙에서 부산·대구·광주·대전 시청을 차례로 거쳐 서울 중앙으로 돌아옵니다.<br><br>캐시 초기화를 켜면 단계마다 관로 타일을 새로 요청합니다.</span></span><button class="collapse-button" type="button" aria-label="자동으로 비교하기 카드 접기" aria-expanded="true" aria-controls="autoCardContent"><span aria-hidden="true">⌃</span></button></div></div>
     <div id="autoCardContent" class="card-content">
     <div class="run-actions"><button id="runScn" class="primary-button"><span aria-hidden="true">▶</span> 시나리오 실행</button><button id="stopScn" disabled>중단</button></div>
     <div class="scenario-options"><label class="repeat-field" for="repeat">반복 횟수 <span class="number-control"><input type="number" id="repeat" value="1" min="1" max="50"><span>회</span></span></label><label class="toggle-row"><span>캐시 초기화</span><input type="checkbox" id="optCold" role="switch"></label></div>
@@ -110,13 +110,14 @@ document.addEventListener('speed:end', function (event) {
     const map = window.__app && window.__app.ml;
     if (!map) return;
     if (centerToggle.checked && !centerMarker) {
-      // Same SEOUL boundary midpoint used by app.js buildPScenario; never recenter the map.
-      const latitude = (37.4338554 + 37.6939493) / 2;
-      const longitude = (126.7954714 + 127.2225354) / 2;
+      // Same national bounds midpoint used by app.js (window.__nationCenter, meta bounds 우선); never recenter the map.
+      const nc = window.__nationCenter ? window.__nationCenter() : [35.8310707, 127.7764620];
+      const latitude = nc[0];
+      const longitude = nc[1];
       const markerElement = document.createElement('div');
-      markerElement.className = 'seoul-center-marker';
-      markerElement.setAttribute('aria-label', '서울 전체 기준 중앙');
-      markerElement.innerHTML = '<span class="center-point"></span><span class="center-caption">서울 중앙</span>';
+      markerElement.className = 'nation-center-marker';
+      markerElement.setAttribute('aria-label', '전국 기준 중앙');
+      markerElement.innerHTML = '<span class="center-point"></span><span class="center-caption">전국 중앙</span>';
       centerMarker = new maplibregl.Marker({element: markerElement, anchor: 'center'}).setLngLat([longitude, latitude]);
     }
     if (centerMarker) {
@@ -143,11 +144,11 @@ document.addEventListener('speed:end', function (event) {
   });
   const individual = document.getElementById('tbl').tBodies[0];
   const comparison = document.getElementById('sumTbl').tBodies[0];
-  const layerNames = {sa001: '서울시 상수관로', wtl_pipe_lm: '건기연 상수관로'};
+  const layerNames = {kict_national: '건기연 상수관망'};
   function layerLabel(value) {
     const raw = Array.isArray(value) ? value.join('+') : String(value || '');
     if (!raw || raw === '–') return '선택된 관로 없음';
-    return raw.replace(/\b(sa001|wtl_pipe_lm)\b/g, function (id) { return layerNames[id]; });
+    return raw.replace(/\b(kict_national)\b/g, function (id) { return layerNames[id]; });
   }
   function setText(element, value) {
     if (element.textContent !== value) element.textContent = value;
@@ -173,7 +174,7 @@ document.addEventListener('speed:end', function (event) {
       setText(row.cells[1], actionLabel(row.cells[1].textContent, rawZoom));
       setText(row.cells[3], layerLabel(row.cells[3].textContent));
       const record = records.get(row.cells[0].textContent);
-      const reference = record && record.seoul_S != null ? record.seoul_S : app && app.S;
+      const reference = record && record.nation_S != null ? record.nation_S : app && app.S;
       const zoom = rawZoom.match(/^(-?\d+(?:\.\d+)?)\s*→\s*(-?\d+(?:\.\d+)?)$/);
       if (zoom) {
         if (typeof reference === 'number' && Number.isFinite(reference)) {
