@@ -6,11 +6,14 @@
 
 실행: PYTHONUTF8=1 [BACKEND_HOST=0.0.0.0] [BACKEND_PORT=8000] python app.py     (의존: Flask, flask-cors, waitress)
  - BACKEND_HOST 기본 127.0.0.1(이 PC 전용, 가능하면 ::1 도 함께 수신). 외부 접속을 허용하려면 0.0.0.0.
- - 전국 타일 폴더: data/tiles_national/kict_national/{z}/{x}/{y}.pbf (z6~z17). 없는 타일은 204(빈 타일).
+ - 전국 타일 소스:
+   · 1순위: data/kict_national.mbtiles (단일 SQLite 캐시테이블, BLOB)
+   · 2순위: data/tiles_national/kict_national/{z}/{x}/{y}.pbf (파일 트리, 폴백)
+   · 환경변수 TILE_SOURCE=mbtiles|file|auto(기본). auto 는 .mbtiles 있으면 그걸 씀.
  - (선택) 서울 타일 data/tiles_full/{sa001,wtl_pipe_lm}/... 는 이 저장소에 없음. 없으면 서울 meta.json 은 404, 서울 타일은 204.
  - 프론트 폴더: frontend/ (환경변수 FRONTEND_DIR 로 지정 가능, 기본은 backend/frontend 또는 ../frontend)
 """
-import os, json, gzip, time, threading, socket
+import os, json, gzip, time, threading, socket, sqlite3
 from pathlib import Path
 from flask import Flask, Response, abort, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -19,6 +22,7 @@ ROOT = Path(__file__).resolve().parent
 TILES_FULL = ROOT / "data" / "tiles_full"  # 전량 보존 타일(줌별 폴더 존재 여부로 완전 줌 판단)
 TILES = ROOT / "data" / "tiles"            # (선택) 기존 z12~17, 일부 선 누락
 TILES_LOW = ROOT / "data" / "tiles_low"    # (선택) 기존 z0~11, 일부 선 누락
+NATIONAL_MBTILES = ROOT / "data" / "kict_national.mbtiles"  # 전국 타일 캐시(단일 SQLite). 있으면 파일 트리 대신 사용.
 LOGS = ROOT / "logs"
 LOGS.mkdir(exist_ok=True)
 LAYERS = {"sa001": "SA001.gpkg/_", "wtl_pipe_lm": "WTL_PIPE_LM.gpkg/wtl_pipe_lm"}
@@ -41,8 +45,21 @@ NAT_SIMPLIFIED_ZOOMS = [6, 7, 8, 9, 10]  # 이 줌은 짧은 선 탈락·MAX_SIZ
 _fe = os.environ.get("FRONTEND_DIR")
 FRONTEND = Path(_fe) if _fe else (ROOT / "frontend" if (ROOT / "frontend").is_dir() else ROOT.parent / "frontend")
 
+# TILE_SOURCE: "mbtiles" | "file" | "auto"(기본, mbtiles 파일 있으면 자동 선택)
+_tile_source = os.environ.get("TILE_SOURCE", "auto").lower()
+USE_MBTILES = (_tile_source == "mbtiles") or (_tile_source == "auto" and NATIONAL_MBTILES.is_file())
+
+# SQLite 연결은 스레드로컬(waitress threads=16). readonly + immutable 로 안전·최고속.
+_mb_local = threading.local()
+def _mb_conn():
+    c = getattr(_mb_local, "conn", None)
+    if c is None:
+        c = sqlite3.connect(f"file:{NATIONAL_MBTILES}?mode=ro&immutable=1", uri=True, check_same_thread=False)
+        _mb_local.conn = c
+    return c
+
 app = Flask(__name__)
-CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "Content-Length"])
+CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)
 if _log_f.tell() == 0:
@@ -61,7 +78,10 @@ def _zoom_dirs(layer):
 
 
 def _meta_national():
-    have = sorted(z for z in ZOOMS if (NATIONAL / NAT_LAYER / str(z)).is_dir())
+    if USE_MBTILES:
+        have = [r[0] for r in _mb_conn().execute("SELECT DISTINCT zoom_level FROM tiles ORDER BY zoom_level")]
+    else:
+        have = sorted(z for z in ZOOMS if (NATIONAL / NAT_LAYER / str(z)).is_dir())
     if not have:
         abort(404)
     return {
@@ -112,7 +132,9 @@ def _meta(layer):
 
 @app.get("/health")
 def health():
-    return jsonify(ok=True, pid=os.getpid(), layers=list(LAYERS))
+    return jsonify(ok=True, pid=os.getpid(), layers=list(LAYERS) + [NAT_LAYER],
+                   tile_source=("mbtiles" if USE_MBTILES else "file"),
+                   mbtiles_present=NATIONAL_MBTILES.is_file())
 
 
 @app.get("/tiles/<layer>/meta.json")
@@ -128,19 +150,29 @@ def meta(layer):
 @app.get("/tiles/<layer>/<int:z>/<int:x>/<int:y>.pbf")
 def tile(layer, z, x, y):
     t0 = time.perf_counter()
+    data = None
     if layer == NAT_LAYER:  # 전국: 간략화 줌(z6~10)은 'simplified', 그 외 'full'
         full = z not in NAT_SIMPLIFIED_ZOOMS
-        p = NATIONAL / layer / str(z) / str(x) / f"{y}.pbf"
+        if USE_MBTILES:
+            row = _mb_conn().execute(
+                "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                (z, x, y)).fetchone()
+            data = bytes(row[0]) if row else None
+        else:
+            p = NATIONAL / layer / str(z) / str(x) / f"{y}.pbf"
+            try:
+                with open(p, "rb") as f: data = f.read()
+            except FileNotFoundError: data = None
     elif layer in LAYERS:
         # tiles_full 에 해당 줌 폴더가 있으면 그것을, 없으면 (있다면) 기존 타일(일부 선 누락)을, 둘 다 없으면 204.
         full = (TILES_FULL / layer / str(z)).is_dir()
         p = (TILES_FULL if full else (TILES if z >= 12 else TILES_LOW)) / layer / str(z) / str(x) / f"{y}.pbf"
+        try:
+            with open(p, "rb") as f: data = f.read()
+        except FileNotFoundError: data = None
     else:
         abort(404)
-    try:
-        with open(p, "rb") as f:
-            data = f.read()  # gzip 사전압축된 MVT
-    except FileNotFoundError:
+    if data is None:
         ms = (time.perf_counter() - t0) * 1000
         log_req(request.path, 204, 0, ms, "empty")
         r = Response(status=204)
@@ -160,8 +192,9 @@ def tile(layer, z, x, y):
     r.headers["X-Server-Ms"] = f"{ms:.3f}"
     r.headers["X-Tile-Bytes"] = str(len(body))
     r.headers["X-Tile-Set"] = ("full" if full else "simplified") if layer == NAT_LAYER else ("full" if full else "legacy-incomplete")
+    r.headers["X-Tile-Source"] = "mbtiles" if (layer == NAT_LAYER and USE_MBTILES) else "file"
     r.headers["Server-Timing"] = f"read;dur={(t_read-t0)*1000:.3f}, total;dur={ms:.3f}"
-    log_req(request.path, 200, len(body), ms, f"read_ms={(t_read-t0)*1000:.3f};enc={enc or 'identity'}")
+    log_req(request.path, 200, len(body), ms, f"read_ms={(t_read-t0)*1000:.3f};enc={enc or 'identity'};src={'mb' if (layer==NAT_LAYER and USE_MBTILES) else 'f'}")
     return r
 
 
