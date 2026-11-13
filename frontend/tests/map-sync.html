@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Map motion alignment test</title>
+<style>body{font:14px sans-serif;margin:12px}iframe{width:100%;height:720px;border:1px solid #bbb}pre{white-space:pre-wrap}button{padding:8px;margin-bottom:8px}</style>
+<button id="run">실제 배경·관망 이동 정합 검사</button><pre id="report">준비 중</pre><iframe id="app" src="../distance.html"></iframe>
+<script>
+const frame=document.getElementById('app'),report=document.getElementById('report');
+document.getElementById('run').onclick=async()=>{
+ const w=frame.contentWindow,d=w.pipeDistance;
+ if(!d){report.textContent='지도 로딩을 기다려 주세요.';return;}
+ const view=d.map.getView(),original={center:view.getCenter().slice(),zoom:view.getZoom()},checks=[];
+ const next=()=>new Promise(r=>w.requestAnimationFrame(r));
+ async function waitRender(){await new Promise(resolve=>{d.map.once('rendercomplete',resolve);d.map.render();});await next();await next();}
+ function sample(){
+  const m=w.document.getElementById('map').getBoundingClientRect(),center=d.map.getCoordinateFromPixel([m.width/2,m.height/2]);
+  const candidates=[...w.document.querySelectorAll('#base img')].map(img=>{
+   const parts=new URL(img.src).pathname.match(/\/(\d+)\/(\d+)\/(\d+)\.png$/),r=img.getBoundingClientRect();
+   if(!parts||!img.complete||!img.naturalWidth||r.width<1||r.bottom<=m.top||r.top>=m.bottom||r.right<=m.left||r.left>=m.right)return null;
+   let opacity=1;for(let el=img;el&&el.id!=='base';el=el.parentElement){const s=w.getComputedStyle(el);opacity*=Number(s.opacity);if(s.display==='none'||s.visibility==='hidden')return null;}
+   return {parts:parts.slice(1).map(Number),r,opacity};
+  }).filter(x=>x&&x.opacity>.95).sort((a,b)=>Math.hypot((a.r.left+a.r.right)/2-m.left-m.width/2,(a.r.top+a.r.bottom)/2-m.top-m.height/2)-Math.hypot((b.r.left+b.r.right)/2-m.left-m.width/2,(b.r.top+b.r.bottom)/2-m.top-m.height/2));
+  if(!candidates.length)return null;
+  const t=candidates[0],[z,x,y]=t.parts,world=256*2**z,R=20037508.342789244,scale=t.r.width/256;
+  let max=0,vectorError=0;
+  for(const p of [center,[center[0]+1000,center[1]+500],[center[0]-1000,center[1]-500]]){
+   const expected=d.map.getPixelFromCoordinate(p),actual=[t.r.left-m.left+((p[0]+R)/(2*R)*world-x*256)*scale,t.r.top-m.top+((R-p[1])/(2*R)*world-y*256)*scale];
+   max=Math.max(max,Math.hypot(actual[0]-expected[0],actual[1]-expected[1]));
+   const vp=d.vectorMap.getPixelFromCoordinate(p);vectorError=Math.max(vectorError,Math.hypot(vp[0]-expected[0],vp[1]-expected[1]));
+  }
+  return {error:max,vectorError,zoom:view.getZoom()};
+ }
+ async function exercise(name,action){
+  const samples=[];let active=true;
+  function record(){if(!active)return;const s=sample();if(s)samples.push(s);w.requestAnimationFrame(record);}
+  w.requestAnimationFrame(record);action();
+  const end=performance.now()+1000;while(performance.now()<end)await next();active=false;
+  checks.push({name,frames:samples.length,maxErrorPx:Math.max(...samples.map(x=>x.error)),vectorErrorPx:Math.max(...samples.map(x=>x.vectorError)),fractionalFrames:samples.filter(x=>Math.abs(x.zoom-Math.round(x.zoom))>.00001).length});
+ }
+ try{
+  report.textContent='실행 중';view.setCenter(w.ol.proj.fromLonLat([126.98,37.56]));view.setZoom(15);await waitRender();
+  await exercise('wheel zoom',()=>{const target=d.map.getViewport(),r=target.getBoundingClientRect();target.dispatchEvent(new w.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-100,clientX:r.left+r.width*.4,clientY:r.top+r.height*.55}));});
+  await waitRender();
+  await exercise('continuous pan',()=>{const c=view.getCenter();view.animate({center:[c[0]+1000,c[1]+500],duration:450});});
+  await waitRender();
+  await exercise('zoom button',()=>w.document.querySelector('.ol-zoom-in').click());
+  report.textContent=JSON.stringify({passed:checks.every(x=>x.frames>5&&x.maxErrorPx<2&&x.vectorErrorPx<.01),checks},null,2);
+ }catch(e){report.textContent=e.stack;}
+ finally{view.setCenter(original.center);view.setZoom(original.zoom);}
+};
+</script>
