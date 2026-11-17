@@ -79,7 +79,8 @@
     $('applyStyle').disabled = busy || running;
     $('resetStyle').disabled = busy || running;
     $('opacity').disabled = busy || running;
-    $('reload').disabled = !ready || busy || running || !rasterChecked();
+    $('run').disabled = !ready || !meta || busy || running;
+    $('reload').disabled = !ready || !meta || busy || running || !rasterChecked();
   }
   function rasterStyle() {
     const expression = ['case', ['==', ['band', 2], 0], 'rgba(0,0,0,0)'];
@@ -233,7 +234,7 @@
   }
   async function switchDataset(dataset, id) {
     if (busy || running) return;
-    if (dataset === selectedDataset) {
+    if (dataset === selectedDataset && meta) {
       await loadCase(id);
       if (!gridLayer.getSource().getFeatures().length) loadGrid();
       return;
@@ -249,8 +250,10 @@
       const nextMeta = await json(datasetApi(dataset, 'meta'), {cache: 'no-store', signal: controller.signal});
       if (controller.signal.aborted) throw new DOMException('중단', 'AbortError');
       if (nextMeta.dataset_id !== dataset.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
+      const firstDataset = !meta;
       selectedDataset = dataset; meta = nextMeta;
       $('downloadResult').href = api('files/' + meta.result_filename);
+      if (firstDataset) fit();
       loaded = true;
     } catch (error) {
       $(dataset.inputs[id]).checked = false; syncLegend();
@@ -281,6 +284,7 @@
   };
   function fit() {
     moveController?.abort();
+    if (!meta) { view.setCenter(ol.proj.fromLonLat([126.98, 37.56])); view.setZoom(11); return; }
     suppressMove = true;
     const [x, y] = meta.origin, [sx, sy] = meta.pixel_size;
     const extent = ol.proj.transformExtent([x, y - meta.height * sy, x + meta.width * sx, y], meta.crs, 'EPSG:3857', 16);
@@ -356,9 +360,6 @@
   }
   try {
     if (!window.ol || !window.GeoTIFF) throw new Error('지도 라이브러리를 불러오지 못했습니다.');
-    meta = await json(api('meta'), {cache: 'no-store'});
-    if (meta.dataset_id !== selectedDataset.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
-    $('downloadResult').href = api('files/' + meta.result_filename);
     view = new ol.View({projection: 'EPSG:3857', center: ol.proj.fromLonLat([126.98, 37.56]), zoom: 11, minZoom: 8, maxZoom: 20, constrainResolution: true, enableRotation: false});
     selection = new ol.source.Vector();
     const selectionStyles = {
@@ -381,6 +382,8 @@
     interactions.push(new ol.interaction.DragPan({kinetic: null}));
     interactions.push(new ol.interaction.MouseWheelZoom({duration: 0, constrainResolution: true}));
     map = new ol.Map({target: 'map', view, interactions, layers: [], controls: [new ol.control.Zoom({duration: 0}), new ol.control.ScaleLine()]});
+    // The background must start even when local raster metadata is unavailable.
+    background();
     vectorMap = new ol.Map({target: 'vectorMap', view, layers: [new ol.layer.Vector({source: selection, zIndex: 100, style: feature => selectionStyles[feature.get('kind')]})], interactions: [], controls: []});
     gridLayer = new ol.layer.Vector({source: new ol.source.Vector(), zIndex: 5, minZoom: 12, visible: false,
       opacity: Number($('opacity').value) / 100,
@@ -403,10 +406,9 @@
       addRecord({case: id, type: '메모리 재표시', download_ms: 0, display_ms: elapsed, total_ms: elapsed, bytes: 0, status: '완료'});
     };
     view.on('change:center', measureMove); view.on('change:resolution', measureMove);
-    fit(); background(); ready = true; controls();
-    await loadCase('case1');
-    loadGrid();
+    ready = true; controls();
     // Read-only diagnostics for browser regression tests.
     window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice()};
+    await switchDataset(selectedDataset, 'case1');
   } catch (error) { status(error.message, true); $('pickMessage').textContent = '자료 연결이 완료되지 않았습니다.'; }
 })();
