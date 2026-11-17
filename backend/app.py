@@ -226,6 +226,9 @@ def frontend_config_js():
 @app.get("/app/<path:fname>")
 def frontend_static(fname):
     """frontend/ 정적 서빙. 같은 포트에서 페이지와 타일을 함께 제공."""
+    # Keep existing bookmarks while the layer map itself lives at /app/.
+    if fname == "distance.html":
+        fname = "index.html"
     r = send_from_directory(FRONTEND, fname)
     r.headers["Cache-Control"] = "no-cache"
     return r

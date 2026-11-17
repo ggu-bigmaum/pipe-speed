@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
   const errors = [], results = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
-    await page.goto(process.env.PIPE_TEST_URL || 'http://localhost:8012/app/distance.html');
+    await page.goto(process.env.PIPE_TEST_URL || 'http://localhost:8012/app/');
     await page.waitForFunction(() => window.pipeDistance && !document.getElementById('reload').disabled, null, {timeout: 45000});
     const cases = [
       {id:'case1', input:'case1', api:'/distance/'}, {id:'case2', input:'case2', api:'/distance/'},

@@ -2,7 +2,7 @@
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const base = process.env.PIPE_TEST_URL || 'http://localhost:8012/app/distance.html';
+const base = process.env.PIPE_TEST_URL || 'http://localhost:8012/app/';
 const out = process.env.PIPE_TEST_OUT;
 (async () => {
   const browser = await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-swiftshader']});
@@ -25,6 +25,7 @@ const out = process.env.PIPE_TEST_OUT;
   }
   try {
     await page.goto(base+'?dataset=kict_sewer_seoul',{waitUntil:'domcontentloaded'});await ready();
+    assert.equal(new URL(page.url()).pathname, new URL(base).pathname, 'main page stays at its entry URL');
     assert.equal(await page.locator('#sewerCase1').count(),1,'sewer Case1 selector exists');
     assert.equal(await page.evaluate(()=>pipeDistance.getMeta().dataset_id),'kict_sewer_seoul');
     assert.match(await page.locator('#legendCase').innerText(),/건기연 하수.*Case 1/);

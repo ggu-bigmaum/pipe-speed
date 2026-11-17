@@ -4,7 +4,7 @@
 
 ## 거리 래스터 테스트 추가 (2026-11-12)
 
-기존 화면 상단의 **레이어 지도 ↗** 또는 `/app/distance.html`에서 벡터타일과 건기연 상수(서울)·하수(서울·보정본)의 Case 1·2 TIF 및 result를 확인합니다. 왼쪽은 레이어 선택, 오른쪽 위는 속도 측정, 오른쪽 아래는 범례입니다.
+기본 주소 **`/app/`**에서 벡터타일과 건기연 상수(서울)·하수(서울·보정본)의 Case 1·2 TIF 및 result를 확인합니다. 왼쪽은 레이어 선택, 오른쪽 위는 속도 측정, 오른쪽 아래는 범례입니다. `frontend/index.html`이 이 메인 화면을 직접 제공합니다.
 
 - **Case 1 / Case 2**로 전환하고 격자를 클릭하면 두 거리값·관로 ID·최근접점을 조회합니다.
 - **원본 다시 읽고 측정**은 원본 TIF 다운로드부터 지도 표시까지 측정합니다. **두 방식 반복**으로 비교하고 **CSV 저장**으로 기록을 받습니다.
@@ -17,8 +17,9 @@
 
 | 파일 | 역할 |
 |---|---|
-| `frontend/index.html` | 화면 |
-| `frontend/app.js` | 지도·관로 표시, 시간 측정, 결과 표, 엑셀·CSV 저장 |
+| `frontend/index.html` | 기본 레이어 지도 화면(`/app/`) |
+| `frontend/distance.js` | 레이어 선택, 거리 조회, 래스터 속도 측정 |
+| `frontend/benchmark.html`, `frontend/app.js` | 기존 전국 시나리오 측정 |
 | `frontend/style.css` | 화면 스타일 |
 | `frontend/config.js` | 설정: 네이버 Client ID, 서버 주소, 관로 목록·색 |
 | `backend/app.py` | 서버. 화면(`/app/`)과 타일(`/tiles/`)을 같은 주소로 제공 |
