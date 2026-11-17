@@ -2,6 +2,10 @@
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
+  // A single Canvas stroke for a million-feature MVT can silently draw nothing.
+  // Split rendering instructions, retaining every feature and its coordinates.
+  const FEATURES_PER_CANVAS_BATCH = 16384;
+  const canvasBatch = Symbol('canvasBatch');
   function create({map, view, config, tilesBase, onChange, onSelect, onRecord}) {
     const entries = [];
     let pending, sequence = 0;
@@ -95,6 +99,12 @@
           const meta = await response.json();
           if (!Number.isInteger(meta.minzoom) || !Number.isInteger(meta.maxzoom) || meta.maxzoom < meta.minzoom) throw new Error('타일 정보 확인 필요');
           const format = new ol.format.MVT({layers: [meta.vector_layer_id || entry.id]});
+          const styles = [];
+          const stroke = new ol.style.Stroke({color: entry.color, width: 1.8});
+          const featureStyle = feature => {
+            const batch = feature[canvasBatch] || 0;
+            return styles[batch] || (styles[batch] = new ol.style.Style({stroke, zIndex: batch}));
+          };
           const source = new ol.source.VectorTile({
             format, minZoom: meta.minzoom, maxZoom: meta.maxzoom, tileSize: config.TILE_SIZE || 512, wrapX: false, transition: 0,
             url: tilesBase + encodeURIComponent(entry.id) + '/{z}/{x}/{y}.pbf',
@@ -108,7 +118,12 @@
                   if (!response.ok) throw new Error('타일 응답 오류');
                   if (response.status === 204) { tile.setFeatures([]); return; }
                   const data = await response.arrayBuffer();
-                  tile.setFeatures(data.byteLength ? format.readFeatures(data, {extent, featureProjection: projection}) : []);
+                  const features = data.byteLength ? format.readFeatures(data, {extent, featureProjection: projection}) : [];
+                  for (let i = FEATURES_PER_CANVAS_BATCH; i < features.length; i++) {
+                    // Private render metadata, not an attribute in the tile or source data.
+                    features[i][canvasBatch] = Math.floor(i / FEATURES_PER_CANVAS_BATCH);
+                  }
+                  tile.setFeatures(features);
                 } catch (_) {
                   if (controller.signal.reason === 'offscreen' || controller.signal.reason === 'superseded' || generation !== entry.generation) {
                     // Release OL's load queue. cancelObsolete refreshes the
@@ -129,7 +144,7 @@
             }
           });
           entry.source = source;
-          entry.layer = new ol.layer.VectorTile({source, visible: false, zIndex: 10, style: new ol.style.Style({stroke: new ol.style.Stroke({color: entry.color, width: 1.8})})});
+          entry.layer = new ol.layer.VectorTile({source, visible: false, zIndex: 10, style: featureStyle});
           map.addLayer(entry.layer); checkbox.disabled = false; note.textContent = '벡터타일';
         } catch (error) { row.classList.add('unavailable'); note.textContent = error.message; row.title = error.message; }
       })();
