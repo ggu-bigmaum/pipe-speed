@@ -27,6 +27,8 @@ TIF를 켠 상태에서 줌 13 이상으로 확대하면 실제 유효 셀의 **
 
 저장소 루트에서 최신 변경을 받은 뒤 **기존 서버가 사용하는 Python 가상환경**으로 실행합니다.
 
+Python 3.9에서는 Pillow 11.3.0이 자동 선택됩니다. [Pillow 12의 Python 3.9 지원 종료](https://pillow.readthedocs.io/en/stable/releasenotes/12.0.0.html#python-3-9) 때문에 설치 조건을 분리했으며, Python 3.10 이상에서는 기존 Pillow 12.0.0을 사용합니다.
+
 ```sh
 git pull
 python -m pip install -r backend/requirements-server.txt

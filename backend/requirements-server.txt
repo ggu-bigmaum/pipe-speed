@@ -3,4 +3,6 @@ Flask==3.1.3
 flask-cors==6.0.5
 waitress==3.0.2
 openpyxl==3.1.5
-Pillow==12.0.0
+# Pillow 12 dropped Python 3.9 support; keep the server's existing interpreter.
+Pillow==11.3.0; python_version < "3.10"
+Pillow==12.0.0; python_version >= "3.10"

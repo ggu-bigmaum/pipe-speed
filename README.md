@@ -57,7 +57,7 @@ backend/data/tiles_national/kict_national/{z}/{x}/{y}.pbf
 
 ### ③ Python 패키지 설치
 
-Python 3.13에서 확인했습니다.
+Python 3.9 이상을 사용합니다. 설치 파일은 Python 3.9에서 Pillow 11.3.0, Python 3.10 이상에서 Pillow 12.0.0을 선택합니다. Python 3.9.25 + Pillow 11.3.0 환경에서 실제 거리 자료를 사용하는 서버 검사 34개를 통과했습니다.
 
 Windows (`start_server.ps1`은 `backend\.venv`의 Python을 씁니다)
 
