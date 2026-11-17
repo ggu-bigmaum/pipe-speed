@@ -118,11 +118,17 @@ def _meta(layer):
     have = sorted(full + legacy)
     if not have:
         abort(404)
+    # Some delivered Seoul sets contain z0..6 and z10..17 but no z7..9.
+    # Advertise the continuous range ending at the most detailed zoom so
+    # clients underzoom that range instead of requesting missing middle tiles.
+    min_zoom = have[-1]
+    while min_zoom - 1 in have:
+        min_zoom -= 1
     return {
         "layer": layer,
         "source": LAYERS[layer],
         "bounds": BOUNDS[layer],
-        "minzoom": have[0],
+        "minzoom": min_zoom,
         "maxzoom": have[-1],
         "count": FEATURE_COUNT[layer],
         "tile_url": f"{request.host_url.rstrip('/')}/tiles/{layer}/{{z}}/{{x}}/{{y}}.pbf",
