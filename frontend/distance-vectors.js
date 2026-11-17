@@ -77,7 +77,7 @@
       measure('벡터타일 다시 읽기');
     };
     const layers = config.LAYERS || [];
-    $('vectorCount').textContent = layers.length; $('layerCount').textContent = layers.length + 2;
+    $('vectorCount').textContent = layers.length; $('layerCount').textContent = layers.length + document.querySelectorAll('input[data-raster]').length;
     for (const layer of layers) {
       const row = document.createElement('label'), checkbox = document.createElement('input'), copy = document.createElement('span'), title = document.createElement('strong'), note = document.createElement('small'), line = document.createElement('span');
       row.className = 'layer-row'; checkbox.type = 'checkbox'; checkbox.disabled = true; checkbox.id = 'vector-' + layer.id;

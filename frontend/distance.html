@@ -8,11 +8,15 @@
 <body>
 <aside id="layerSidebar" aria-label="레이어 선택">
   <div class="brand"><span class="brand-icon" aria-hidden="true">▱</span><div><h1>관망 지도</h1><p>PIPE · 레이어 선택</p></div><button id="closeLayers" class="icon mobile-only" aria-label="레이어 목록 닫기">×</button></div>
-  <div class="catalog-heading"><h2>레이어</h2><span id="layerCount" class="count">3</span></div>
+  <div class="catalog-heading"><h2>레이어</h2><span id="layerCount" class="count">5</span></div>
   <details class="layer-group" open><summary><span>벡터타일</span><span id="vectorCount" class="count">1</span></summary><div id="vectorList"></div></details>
-  <details class="layer-group" open><summary><span>TIF</span><span class="count">2</span></summary>
-    <label class="layer-row"><input id="case1" type="checkbox" checked disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
-    <label class="layer-row"><input id="case2" type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+  <details class="layer-group" open><summary><span>TIF · 건기연 상수(서울)</span><span class="count">2</span></summary>
+    <label class="layer-row"><input id="case1" data-raster type="checkbox" checked disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
+    <label class="layer-row"><input id="case2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+  </details>
+  <details class="layer-group" open><summary><span>TIF · 건기연 하수(서울·보정본)</span><span class="count">2</span></summary>
+    <label class="layer-row"><input id="sewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
+    <label class="layer-row"><input id="sewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
   </details>
 </aside>
 <main id="mapArea" aria-label="관망 지도">

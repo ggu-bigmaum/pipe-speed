@@ -61,6 +61,10 @@ def _mb_conn():
 app = Flask(__name__)
 from distance import create_distance_blueprint
 app.register_blueprint(create_distance_blueprint(ROOT / 'data' / 'distance' / 'kict_water_seoul'))
+app.register_blueprint(create_distance_blueprint(
+    ROOT / 'data' / 'distance' / 'kict_sewer_seoul', name='distance_sewer',
+    url_prefix='/distance/kict_sewer_seoul', dataset_id='kict_sewer_seoul',
+    label='건기연 하수(서울·보정본)', result_filename='pipe_dist_result.csv'))
 CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)

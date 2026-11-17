@@ -1,12 +1,28 @@
 """Original TIFF delivery and grid-ID-based result lookup; no database on the server."""
 import json
+import csv
 import math
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from flask import Blueprint, jsonify, request, send_from_directory, abort
 
 FILES = ('pipe_case1_m.tif', 'pipe_case2_m.tif', 'pipe_dist_result.xlsx')
 HEADERS = ('grid_id','case1_m','case2_m','pass_flag','pipe_id','near_x','near_y','near_lon','near_lat')
+
+
+@contextmanager
+def result_rows(path):
+    if path.suffix == '.csv':
+        with path.open(encoding='utf-8-sig', newline='') as handle:
+            yield iter(csv.reader(handle))
+    else:
+        from openpyxl import load_workbook
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        try:
+            yield iter(workbook['격자별_거리'].values)
+        finally:
+            workbook.close()
 
 
 def identifier(value):
@@ -20,19 +36,22 @@ def identifier(value):
 
 
 class DistanceData:
-    def __init__(self, directory):
+    def __init__(self, directory, result_filename='pipe_dist_result.xlsx'):
+        if result_filename not in ('pipe_dist_result.xlsx', 'pipe_dist_result.csv'):
+            raise ValueError('지원하지 않는 result 파일 형식입니다.')
         self.directory = Path(directory)
+        self.result_filename = result_filename
+        self.files = (*FILES[:2], result_filename)
         self.lock = threading.Lock()
         self.signature = None
         self._grid_geometry = None
 
     def load(self):
-        paths = [self.directory/f for f in (*FILES,'grid_index.json')]
+        paths = [self.directory/f for f in (*self.files,'grid_index.json')]
         signature = tuple((p.stat().st_size,p.stat().st_mtime_ns) for p in paths)
         with self.lock:
             if signature == self.signature:
                 return self
-            from openpyxl import load_workbook
             from PIL import Image
             index = json.loads(paths[-1].read_text(encoding='utf-8'))
             if index['crs'] != 'EPSG:32652':
@@ -54,17 +73,17 @@ class DistanceData:
                     if float(im.tag_v2.get(42113,'nan'))!=index['nodata']:
                         raise ValueError('TIF의 NoData 정의가 대응표와 다릅니다.')
                     arrays.append(list(im.get_flattened_data() if hasattr(im,'get_flattened_data') else im.getdata()))
-            wb=load_workbook(self.directory/FILES[2],read_only=True,data_only=True)
             records={}
-            try:
-                values=iter(wb['격자별_거리'].values)
-                columns=next(values)
+            with result_rows(self.directory/self.result_filename) as values:
+                columns=next(values, ())
                 if not set(HEADERS).issubset(columns):
                     raise ValueError('result에 필요한 열이 없습니다: '+', '.join(set(HEADERS)-set(columns)))
                 indices=[columns.index(k) for k in HEADERS]
                 for row in values:
-                    if not row or all(v is None for v in row):
+                    if not row or all(v in (None, '') for v in row):
                         continue
+                    if len(row) <= max(indices):
+                        raise ValueError('result에 열이 부족한 행이 있습니다.')
                     record=dict(zip(HEADERS,(row[i] for i in indices)))
                     gid=identifier(record['grid_id']); record['grid_id']=gid
                     record['pipe_id']=identifier(record['pipe_id'])
@@ -74,12 +93,10 @@ class DistanceData:
                         if record[key] is None or not math.isfinite(float(record[key])):
                             raise ValueError('result에 유효하지 않은 수치가 있습니다: '+key)
                         record[key]=float(record[key])
-                    if record['pass_flag'] not in (0,1):
+                    if record['pass_flag'] not in (0,1,'0','1'):
                         raise ValueError('pass_flag는 0 또는 1이어야 합니다.')
                     record['pass_flag']=int(record['pass_flag'])
                     records[gid]=record
-            finally:
-                wb.close()
             if set(records)!=grid_ids:
                 raise ValueError('result의 격자 ID와 위치 대응표가 다릅니다.')
             for (col,row),gid in pixels.items():
@@ -125,9 +142,11 @@ class DistanceData:
             return {'crs':self.index['crs'],'pixel_size':self.index['pixel_size'],'geometry':self._grid_geometry}
 
 
-def create_distance_blueprint(directory):
-    bp=Blueprint('distance',__name__,url_prefix='/distance')
-    store=DistanceData(directory)
+def create_distance_blueprint(directory, *, name='distance', url_prefix='/distance',
+                              dataset_id='kict_water_seoul', label='건기연 상수(서울)',
+                              result_filename='pipe_dist_result.xlsx'):
+    bp=Blueprint(name,__name__,url_prefix=url_prefix)
+    store=DistanceData(directory,result_filename)
 
     @bp.errorhandler(FileNotFoundError)
     @bp.errorhandler(OSError)
@@ -148,14 +167,14 @@ def create_distance_blueprint(directory):
     @bp.get('/meta')
     def meta():
         data=store.load(); result={k:v for k,v in data.index.items() if k not in ('cells','columns')}
-        result.update(label='건기연 서울 상수',result_count=len(data.records),
+        result.update(dataset_id=dataset_id,label=label,result_filename=result_filename,result_count=len(data.records),
             cases=[{'id':f'case{i+1}','filename':f,'bytes':(store.directory/f).stat().st_size,
                     'label':label} for i,(f,label) in enumerate(zip(FILES[:2],('Case 1 · 중심점부터 관로까지','Case 2 · 관로 통과 격자는 0')))])
         return jsonify(result)
 
     @bp.get('/files/<path:filename>')
     def original_file(filename):
-        if filename not in FILES:
+        if filename not in store.files:
             abort(404)
         return send_from_directory(store.directory,filename,conditional=False,max_age=0)
 
@@ -176,6 +195,6 @@ def create_distance_blueprint(directory):
         if gid is None:
             return jsonify(matched=False,reason='nodata')
         sx,sy=data.index['pixel_size']; ox,oy=data.index['origin']
-        return jsonify(matched=True,col=col,row=row,center=[ox+(col+.5)*sx,oy-(row+.5)*sy],**data.records[gid])
+        return jsonify(matched=True,dataset_id=dataset_id,col=col,row=row,center=[ox+(col+.5)*sx,oy-(row+.5)*sy],**data.records[gid])
 
     return bp

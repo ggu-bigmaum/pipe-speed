@@ -5,7 +5,19 @@
   const cfg = window.APP_CONFIG || {};
   const core = window.PipeDistanceCore;
   const prefix = cfg.API_BASE ? cfg.API_BASE.replace(/\/$/, '') + '/distance/' : new URL('../distance/', location.href).href;
-  const api = path => prefix + path;
+  const datasets = [
+    {id: 'kict_water_seoul', label: '건기연 상수(서울)', route: '', inputs: {case1: 'case1', case2: 'case2'}},
+    {id: 'kict_sewer_seoul', label: '건기연 하수(서울·보정본)', route: 'kict_sewer_seoul/', inputs: {case1: 'sewerCase1', case2: 'sewerCase2'}}
+  ];
+  let selectedDataset = datasets.find(d => d.id === new URLSearchParams(location.search).get('dataset')) || datasets[0];
+  let datasetRevision = 0;
+  const datasetApi = (dataset, path) => prefix + dataset.route + path;
+  const api = path => datasetApi(selectedDataset, path);
+  const rasterInputs = () => datasets.flatMap(d => Object.values(d.inputs));
+  const rasterChecked = () => rasterInputs().some(id => $(id).checked);
+  function checkRaster(id) {
+    for (const dataset of datasets) for (const [key, input] of Object.entries(dataset.inputs)) $(input).checked = dataset === selectedDataset && key === id;
+  }
   const defaults = {breaks: [10, 50, 100, 500], colors: ['#08306b', '#2171b5', '#4292c6', '#9ecae1', '#f7fbff']};
   let style = structuredClone(defaults), meta, map, view, selection, currentLayer, currentSource, vectorMap, vectorCatalog, gridLayer;
   let selectedCase = 'case1', busy = false, running = false, stopped = false, active, clickController, clickSeq = 0;
@@ -16,7 +28,7 @@
   const number = value => Number(value).toLocaleString('ko-KR', {maximumFractionDigits: 3});
   const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
   const visibleDocument = () => { if (document.hidden) throw new Error('탭이 숨겨져 측정을 중단했습니다.'); };
-  const caseName = id => id === 'case1' ? '거리 Case 1' : '거리 Case 2';
+  const caseName = id => `${selectedDataset.label} · Case ${id === 'case1' ? 1 : 2}`;
   function measureTab(kind) {
     for (const name of ['raster', 'vector']) {
       const selected = kind === name;
@@ -33,7 +45,7 @@
       }
     };
   }
-  function closeDetails() { ++clickSeq; clickController?.abort(); selection?.clear(); $('detailPanel').hidden = true; }
+  function closeDetails() { ++clickSeq; clickController?.abort(); selection?.clear(); $('cellDetails').hidden = true; $('detailPanel').hidden = true; }
   $('closeDetails').onclick = closeDetails;
   $('editStyle').onclick = () => $('styleDialog').showModal();
   $('closeStyle').onclick = () => $('styleDialog').close();
@@ -48,7 +60,7 @@
     gridLayer?.setVisible(shown);
     $('rasterLegend').hidden = !shown;
     $('legendCase').textContent = caseName(selectedCase);
-    $('measureCase').textContent = $('case1').checked || $('case2').checked ? caseName(selectedCase) : '선택 없음';
+    $('measureCase').textContent = rasterChecked() ? caseName(selectedCase) : '선택 없음';
     $('vectorLegend').replaceChildren();
     const vectors = vectorCatalog?.selected() || [];
     for (const entry of vectors) { const row = document.createElement('div'), line = document.createElement('span'); row.className = 'vector-legend-row'; line.className = 'layer-line'; line.style.background = entry.color; row.append(line, document.createTextNode(entry.label)); $('vectorLegend').append(row); }
@@ -61,13 +73,13 @@
     return data;
   }
   function controls() {
-    for (const id of ['case1', 'case2', 'reload', 'run', 'fit']) $(id).disabled = !ready || busy || running;
+    for (const id of [...rasterInputs(), 'reload', 'run', 'fit']) $(id).disabled = !ready || busy || running;
     $('stop').disabled = !busy && !running;
     $('repeat').disabled = busy || running;
     $('applyStyle').disabled = busy || running;
     $('resetStyle').disabled = busy || running;
     $('opacity').disabled = busy || running;
-    $('reload').disabled = !ready || busy || running || !($('case1').checked || $('case2').checked);
+    $('reload').disabled = !ready || busy || running || !rasterChecked();
   }
   function rasterStyle() {
     const expression = ['case', ['==', ['band', 2], 0], 'rgba(0,0,0,0)'];
@@ -110,23 +122,27 @@
   $('opacity').oninput = () => { $('opacityValue').textContent = $('opacity').value + '%'; if (currentLayer) currentLayer.setOpacity(Number($('opacity').value) / 100); gridLayer?.setOpacity(Number($('opacity').value) / 100); };
   function metrics(download, display, total) { $('downloadMs').textContent = ms(download); $('renderMs').textContent = ms(display); $('totalMs').textContent = ms(total); }
   function addRecord(record) {
-    records.push({time: new Date().toISOString(), case: selectedCase, zoom: view.getZoom().toFixed(2), viewport: map.getSize().join('x'), ...record});
+    const vector = record.type?.includes('벡터');
+    records.push({time: new Date().toISOString(), dataset_id: vector ? '' : selectedDataset.id, dataset_label: vector ? '' : selectedDataset.label, case: selectedCase, zoom: view.getZoom().toFixed(2), viewport: map.getSize().join('x'), ...record});
     $('recordCount').textContent = records.length; $('csv').disabled = !records.length; renderRecords();
   }
   function renderRecords() {
     $('recordsBody').replaceChildren();
     records.slice(-200).reverse().forEach(record => {
       const tr = document.createElement('tr');
-      [record.type, record.label || record.case, record.download_ms?.toFixed(1) ?? '—', record.display_ms?.toFixed(1) ?? '—', record.total_ms?.toFixed(1) ?? '—', record.bytes == null ? '—' : (record.bytes / 1000).toFixed(1), record.zoom, record.status].forEach(value => { const td = document.createElement('td'); td.textContent = value; tr.append(td); });
+      [record.type, record.label || `${record.dataset_label} · ${record.case}`, record.download_ms?.toFixed(1) ?? '—', record.display_ms?.toFixed(1) ?? '—', record.total_ms?.toFixed(1) ?? '—', record.bytes == null ? '—' : (record.bytes / 1000).toFixed(1), record.zoom, record.status].forEach(value => { const td = document.createElement('td'); td.textContent = value; tr.append(td); });
       $('recordsBody').append(tr);
     });
-    $('summary').textContent = ['case1', 'case2'].map(id => { const rs = records.filter(r => r.case === id && r.type === '원본 읽기' && r.status === '완료'); return `${id}: ${rs.length}회` + (rs.length ? ` · 평균 ${ms(rs.reduce((sum, r) => sum + r.total_ms, 0) / rs.length)}` : ''); }).join(' / ');
+    $('summary').textContent = datasets.flatMap(dataset => ['case1', 'case2'].map(id => {
+      const rs = records.filter(r => r.dataset_id === dataset.id && r.case === id && r.type === '원본 읽기' && r.status === '완료');
+      return rs.length ? `${dataset.label} ${id}: ${rs.length}회 · 평균 ${ms(rs.reduce((sum, r) => sum + r.total_ms, 0) / rs.length)}` : '';
+    })).filter(Boolean).join(' / ');
   }
   $('showRecords').onclick = () => $('recordsDialog').showModal();
   $('closeRecords').onclick = () => $('recordsDialog').close();
   $('clearRecords').onclick = () => { records = []; $('recordCount').textContent = 0; $('csv').disabled = true; renderRecords(); };
   $('csv').onclick = () => {
-    const keys = ['time', 'type', 'case', 'download_ms', 'display_ms', 'total_ms', 'bytes', 'zoom', 'viewport', 'status'];
+    const keys = ['time', 'type', 'dataset_id', 'dataset_label', 'case', 'download_ms', 'display_ms', 'total_ms', 'bytes', 'zoom', 'viewport', 'status'];
     const quote = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
     const blob = new Blob(['\uFEFF' + [keys, ...records.map(r => keys.map(k => r[k]))].map(row => row.map(quote).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'distance-speed-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -158,9 +174,9 @@
     if (busy) return false;
     visibleDocument(); busy = true; selectedCase = id; active = new AbortController(); controls();
     if (!running) $('runState').textContent = '';
-    ['case1', 'case2'].forEach(key => { $(key).checked = key === id; });
+    checkRaster(id);
     measureTab('raster'); $('measureCase').textContent = caseName(id);
-    metrics(null, null, null); $('measurementInfo').textContent = '다운로드 및 표출 중…'; status(`${id.toUpperCase()} 원본 읽는 중…`);
+    metrics(null, null, null); $('measurementInfo').textContent = '다운로드 및 표출 중…'; status(`${caseName(id)} 원본 읽는 중…`);
     const file = meta.cases.find(c => c.id === id), controller = active;
     let started, downloadDone, byteCount, success = false;
     try {
@@ -184,7 +200,7 @@
       metrics(download, display, ended - started);
       $('measurementInfo').textContent = `${file.filename} · ${(byteCount / 1000).toFixed(1)} KB · HTTP 캐시 우회`;
       addRecord({type: '원본 읽기', download_ms: download, display_ms: display, total_ms: ended - started, bytes: byteCount, status: '완료'});
-      status(`${id.toUpperCase()} 표시 완료 · 격자를 클릭해 보세요.`); success = true;
+      status(`${caseName(id)} 표시 완료 · 격자를 클릭해 보세요.`); success = true;
     } catch (error) {
       removeRaster(); metrics(null, null, null);
       const message = controller.signal.aborted ? '측정을 중단했습니다.' : error.message;
@@ -198,8 +214,53 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { moveController?.abort(); if (busy || running) stop(); }
   });
-  for (const id of ['case1', 'case2']) $(id).onchange = () => {
-    if ($(id).checked) loadCase(id);
+  async function loadGrid() {
+    const revision = datasetRevision, dataset = selectedDataset;
+    try {
+      const data = await json(datasetApi(dataset, 'gridlines'), {cache: 'no-store'});
+      if (revision !== datasetRevision || dataset !== selectedDataset) return;
+      const step = Math.min(...data.pixel_size);
+      const lines = data.geometry.coordinates.map(([a, b]) => {
+        const count = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+        return Array.from({length: count + 1}, (_, i) => [a[0] + (b[0] - a[0]) * i / count, a[1] + (b[1] - a[1]) * i / count]);
+      });
+      gridLayer.getSource().clear();
+      gridLayer.getSource().addFeature(new ol.Feature(new ol.geom.MultiLineString(lines).transform(data.crs, view.getProjection())));
+      syncLegend();
+    } catch (_) {
+      if (revision === datasetRevision) status(`${dataset.label} 격자선을 불러오지 못했습니다. 자료를 다시 선택해 주세요.`, true);
+    }
+  }
+  async function switchDataset(dataset, id) {
+    if (busy || running) return;
+    if (dataset === selectedDataset) {
+      await loadCase(id);
+      if (!gridLayer.getSource().getFeatures().length) loadGrid();
+      return;
+    }
+    busy = true; active = new AbortController(); const controller = active;
+    ++datasetRevision; closeDetails(); removeRaster(); gridLayer.getSource().clear();
+    rasterInputs().forEach(input => { $(input).checked = false; });
+    $(dataset.inputs[id]).checked = true;
+    controls(); syncLegend(); metrics(null, null, null); status(`${dataset.label} 자료 확인 중…`);
+    $('measureCase').textContent = `${dataset.label} · 자료 확인 중`;
+    let loaded = false;
+    try {
+      const nextMeta = await json(datasetApi(dataset, 'meta'), {cache: 'no-store', signal: controller.signal});
+      if (controller.signal.aborted) throw new DOMException('중단', 'AbortError');
+      if (nextMeta.dataset_id !== dataset.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
+      selectedDataset = dataset; meta = nextMeta;
+      $('downloadResult').href = api('files/' + meta.result_filename);
+      loaded = true;
+    } catch (error) {
+      $(dataset.inputs[id]).checked = false; syncLegend();
+      status(controller.signal.aborted ? '자료 전환을 중단했습니다.' : error.message, !controller.signal.aborted);
+    }
+    finally { busy = false; active = null; controls(); }
+    if (loaded) { await loadCase(id); loadGrid(); }
+  }
+  for (const dataset of datasets) for (const [id, input] of Object.entries(dataset.inputs)) $(input).onchange = () => {
+    if ($(input).checked) switchDataset(dataset, id);
     else { moveController?.abort(); currentLayer?.setVisible(false); closeDetails(); metrics(null, null, null); $('moveMs').textContent = '—'; status('TIF 표시를 껐습니다.'); syncLegend(); controls(); }
   };
   $('reload').onclick = () => loadCase(selectedCase);
@@ -230,6 +291,7 @@
   $('fit').onclick = fit;
   async function pick(coordinate) {
     if (!currentLayer?.getVisible()) return;
+    $('detailTitle').textContent = `${selectedDataset.label} · 선택 격자`;
     $('detailPanel').hidden = false;
     const sequence = ++clickSeq; clickController?.abort(); clickController = new AbortController();
     selection.clear(); $('cellDetails').hidden = true;
@@ -240,6 +302,7 @@
       const d = await json(api(`cell?col=${cell.col}&row=${cell.row}`), {signal: clickController.signal, cache: 'no-store'});
       if (sequence !== clickSeq) return;
       if (!d.matched) { $('pickMessage').textContent = '값이 없는 격자입니다 (NoData).'; return; }
+      if (d.dataset_id !== selectedDataset.id) throw new Error('선택한 자료와 조회 결과의 구분이 다릅니다.');
       $('pickMessage').textContent = 'result의 원래 격자 ID로 연결했습니다.'; $('cellDetails').hidden = false;
       $('gridId').textContent = d.grid_id; $('value1').textContent = number(d.case1_m) + ' m'; $('value2').textContent = number(d.case2_m) + ' m';
       $('passFlag').textContent = d.pass_flag ? '통과' : '미통과'; $('pipeId').textContent = d.pipe_id ?? '없음';
@@ -294,7 +357,8 @@
   try {
     if (!window.ol || !window.GeoTIFF) throw new Error('지도 라이브러리를 불러오지 못했습니다.');
     meta = await json(api('meta'), {cache: 'no-store'});
-    $('downloadResult').href = api('files/pipe_dist_result.xlsx');
+    if (meta.dataset_id !== selectedDataset.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
+    $('downloadResult').href = api('files/' + meta.result_filename);
     view = new ol.View({projection: 'EPSG:3857', center: ol.proj.fromLonLat([126.98, 37.56]), zoom: 11, minZoom: 8, maxZoom: 20, constrainResolution: true, enableRotation: false});
     selection = new ol.source.Vector();
     const selectionStyles = {
@@ -341,16 +405,7 @@
     view.on('change:center', measureMove); view.on('change:resolution', measureMove);
     fit(); background(); ready = true; controls();
     await loadCase('case1');
-    json(api('gridlines'), {cache: 'no-store'}).then(data => {
-      // Preserve every cell vertex before projecting long UTM grid runs.
-      const step = Math.min(...data.pixel_size);
-      const lines = data.geometry.coordinates.map(([a, b]) => {
-        const count = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
-        return Array.from({length: count + 1}, (_, i) => [a[0] + (b[0] - a[0]) * i / count, a[1] + (b[1] - a[1]) * i / count]);
-      });
-      gridLayer.getSource().addFeature(new ol.Feature(new ol.geom.MultiLineString(lines).transform(data.crs, view.getProjection())));
-      syncLegend();
-    }).catch(() => status('격자선을 불러오지 못했습니다. 페이지를 새로고침해 주세요.', true));
+    loadGrid();
     // Read-only diagnostics for browser regression tests.
     window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice()};
   } catch (error) { status(error.message, true); $('pickMessage').textContent = '자료 연결이 완료되지 않았습니다.'; }

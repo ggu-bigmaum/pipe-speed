@@ -1,4 +1,4 @@
-/* Run against a local server with the real two TIFFs; no synthetic raster. */
+/* Run against a local server with the real water and sewer TIFFs; no synthetic raster. */
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 
@@ -10,15 +10,19 @@ const assert = require('node:assert/strict');
   try {
     await page.goto(process.env.PIPE_TEST_URL || 'http://localhost:8012/app/distance.html');
     await page.waitForFunction(() => window.pipeDistance && !document.getElementById('reload').disabled, null, {timeout: 45000});
-    for (const id of ['case1', 'case2']) {
-      if (!await page.locator('#' + id).isChecked()) await page.locator('#' + id).check();
+    const cases = [
+      {id:'case1', input:'case1', api:'/distance/'}, {id:'case2', input:'case2', api:'/distance/'},
+      {id:'case1', input:'sewerCase1', api:'/distance/kict_sewer_seoul/'}, {id:'case2', input:'sewerCase2', api:'/distance/kict_sewer_seoul/'}
+    ];
+    for (const {id, input, api} of cases) {
+      if (!await page.locator('#' + input).isChecked()) await page.locator('#' + input).check();
       await page.waitForFunction(() => !document.getElementById('reload').disabled, null, {timeout: 45000});
-      await page.evaluate(async id => {
+      await page.evaluate(async ({id, api}) => {
         const m = pipeDistance.getMeta(), f = m.cases.find(c => c.id === id);
-        const bytes = await fetch('/distance/files/' + f.filename).then(r => r.arrayBuffer());
+        const bytes = await fetch(api + 'files/' + f.filename).then(r => r.arrayBuffer());
         const tiff = await GeoTIFF.fromArrayBuffer(bytes), im = await tiff.getImage();
         window.alignmentReference = {values: (await im.readRasters())[0], width: im.getWidth()};
-      }, id);
+      }, {id, api});
       for (const zoom of [13, 14, 16, 18, 20]) {
         for (const center of [[126.984, 37.568], [126.87, 37.53], [127.10, 37.60]]) {
           await page.evaluate(({zoom, center}) => new Promise(resolve => {
@@ -49,7 +53,7 @@ const assert = require('node:assert/strict');
             }
             return {tested, failures};
           });
-          results.push({id, zoom, center, tested: result.tested, failures: result.failures.length});
+          results.push({input, id, zoom, center, tested: result.tested, failures: result.failures.length});
           assert.ok(result.tested > 0, 'screen samples were exercised');
           assert.equal(result.failures.length, 0, JSON.stringify({id, zoom, center, failures: result.failures.slice(0, 8)}));
         }

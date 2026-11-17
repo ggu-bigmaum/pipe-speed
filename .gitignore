@@ -10,7 +10,5 @@ logs/
 .env.local
 info.txt
 
-# 대용량 데이터 (서버에 별도 전송)
-backend/data/tiles_full/
-backend/data/tiles_national/
-backend/data/*.mbtiles
+# 데이터는 서버에 별도 전송
+backend/data/
