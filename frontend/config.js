@@ -5,7 +5,9 @@ window.APP_CONFIG = {
   // 타일 파일은 backend/data 아래에 별도 배치한다. 데이터가 없으면 선택칸이 비활성화된다.
   LAYERS: [
     { id: 'kict_national', label: '건기연 상수관망', color: '#4dabf7' },
-    { id: 'sa001', label: '서울시 상수관망', color: '#df7c24' }
+    { id: 'sa001', label: '서울시 상수관망', color: '#df7c24' },
+    { id: 'kict_sewer_seoul', label: '건기연 하수(서울·보정본)', color: '#168574' },
+    { id: 'sb001', label: '서울시 하수관망', color: '#9355b5' }
   ],
   TILE_SIZE: 512,                  // MapLibre 소스 tileSize (512: 요청 z = 네이버zoom-1, 256: 요청 z = 네이버zoom)
   DEFAULT_CENTER: [35.8310707, 127.7764620], // [lat, lng] 전국 범위 중심(app.js NATION 기본값 기준). 실제 첫 화면은 app.js 가 meta bounds 중심으로 설정

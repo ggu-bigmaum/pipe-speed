@@ -1,4 +1,4 @@
-"""상수관로 벡터타일 서버 (기본 http://localhost:8000). 규약은 backend/HANDOFF.md 참조.
+"""상하수 관로 벡터타일 서버 (기본 http://localhost:8000). 규약은 backend/HANDOFF.md 참조.
  GET /tiles/{layer}/{z}/{x}/{y}.pbf   (XYZ, EPSG:3857, gzip 사전압축 저장, 타일 없으면 204)
  GET /tiles/{layer}/meta.json
  GET /app/*                           (frontend 정적 서빙)
@@ -10,7 +10,7 @@
    · 1순위: data/kict_national.mbtiles (단일 SQLite 캐시테이블, BLOB)
    · 2순위: data/tiles_national/kict_national/{z}/{x}/{y}.pbf (파일 트리, 폴백)
    · 환경변수 TILE_SOURCE=mbtiles|file|auto(기본). auto 는 .mbtiles 있으면 그걸 씀.
- - (선택) 서울 타일 data/tiles_full/{sa001,wtl_pipe_lm}/... 는 이 저장소에 없음. 없으면 서울 meta.json 은 404, 서울 타일은 204.
+ - (선택) 서울 타일 data/tiles_full/{sa001,wtl_pipe_lm,kict_sewer_seoul,sb001}/... 는 이 저장소에 없음. 없으면 서울 meta.json 은 404, 서울 타일은 204.
  - 프론트 폴더: frontend/ (환경변수 FRONTEND_DIR 로 지정 가능, 기본은 backend/frontend 또는 ../frontend)
 """
 import os, json, gzip, time, threading, socket, sqlite3
@@ -25,13 +25,23 @@ TILES_LOW = ROOT / "data" / "tiles_low"    # (선택) 기존 z0~11, 일부 선 �
 NATIONAL_MBTILES = ROOT / "data" / "kict_national.mbtiles"  # 전국 타일 캐시(단일 SQLite). 있으면 파일 트리 대신 사용.
 LOGS = ROOT / "logs"
 LOGS.mkdir(exist_ok=True)
-LAYERS = {"sa001": "SA001.gpkg/_", "wtl_pipe_lm": "WTL_PIPE_LM.gpkg/wtl_pipe_lm"}
-FEATURE_COUNT = {"sa001": 1444804, "wtl_pipe_lm": 1445440}  # sqlite count(*) 로 확인한 원본 건수
+LAYERS = {"sa001": "SA001.gpkg/_", "wtl_pipe_lm": "WTL_PIPE_LM.gpkg/wtl_pipe_lm",
+          "kict_sewer_seoul": "source/kict_sewer_seoul/SWL_PIPE_LM.gpkg/swl_pipe_lm",
+          "sb001": "source/seoul_sewer/SB001.gpkg/sb001"}
+FEATURE_COUNT = {"sa001": 1444804, "wtl_pipe_lm": 1445440,
+                 "kict_sewer_seoul": 409087, "sb001": 406651}  # 원본 GPKG 및 변환 완료 보고서에서 확인한 피처 수
 # meta.json 값(타일 폴더에 의존하지 않도록 고정). bounds: WGS84 [west,south,east,north]
 BOUNDS = {"sa001": [126.7954714, 37.4338554, 127.2225354, 37.6939493],
-          "wtl_pipe_lm": [126.7984784, 37.4338554, 127.2225354, 37.6939493]}
+          "wtl_pipe_lm": [126.7984784, 37.4338554, 127.2225354, 37.6939493],
+          "kict_sewer_seoul": [126.7806927, 37.4305511, 127.1828446, 37.6938474],
+          "sb001": [126.7806927, 37.4305511, 127.1828446, 37.6938474]}
 FIELDS = {"sa001": {"PLINE_ID": "String", "PLINE_CALB": "Number", "PLINE_MTRQ": "String"},
-          "wtl_pipe_lm": {"FTR_IDN": "Number", "STD_DIP": "Number", "MOP_CDE": "String"}}
+          "wtl_pipe_lm": {"FTR_IDN": "Number", "STD_DIP": "Number", "MOP_CDE": "String"},
+          "kict_sewer_seoul": {"id": "Number", "org_idn": "String", "original_pipe_id": "Number",
+                               "feature_role": "String", "correction_stage": "Number", "roadtypes_stage": "Number",
+                               "treatment_code": "String", "std_dip": "Number", "std_hol": "Number", "std_vel": "Number"},
+          "sb001": {"id": "Number", "IDN": "String", "TY_JL_CDE": "String", "MOP_CDE": "String",
+                    "HOL_STD": "Number", "VEL_STD": "Number", "SAT_MHE": "String", "END_MHE": "String"}}
 ZOOMS = range(0, 18)
 
 # 전국 상수관망(건기연상수관망.gpkg): 추가 레이어. 서울 레이어(sa001, wtl_pipe_lm)와 별개 경로(data/tiles_national).
