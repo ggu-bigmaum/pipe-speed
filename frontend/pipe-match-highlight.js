@@ -5,7 +5,7 @@
   const MAX_REGISTERED = 32, MAX_QUEUED = 32, MAX_INFLIGHT = 2;
   const PAIRS = [
     {id: 'water', label: '상수', layers: ['kict_national', 'sa001'], target: 'sa001', pendingLabel: 'ID·전체 선형 완전일치'},
-    {id: 'sewer', label: '하수', layers: ['kict_sewer_seoul', 'sb001'], target: 'sb001', pendingLabel: '비교 결과 대기'}
+    {id: 'sewer', label: '하수', layers: ['kict_sewer_seoul', 'sb001'], target: 'sb001', pendingLabel: '3자리 반올림 후 형상 일치'}
   ];
   function requestBudget() {
     let used = 0;

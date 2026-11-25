@@ -1,5 +1,9 @@
 # Sewer pair highlighting and delivery-size estimate
 
+## Implemented decision — 2026-11-26
+
+The user subsequently approved sewer ID-independent whole-geometry equality after comparison-only XY rounding to three decimals (half-away-from-zero), per-object storage, click lookup, highlighting and separate stage commits. Implemented and verified: see [current result](../../sewer-comparison-20261126.md). Water criteria and source geometry remain unchanged. The portable-PC bundle is still explicitly excluded. The following text is the historical pre-approval plan, not the current runtime state.
+
 **Current scope:** Improve emphasis contrast, prepare independent water/sewer pair handling, audit sewer evidence, and estimate a local runnable distribution without building it. Actual sewer matching and a sewer comparison package are **on hold pending the user's decision** on the geometric tolerance and identifier criterion.
 
 **Decision update (2026-11-25):** Sewer original identifier domains have no overlap, and whole-source geometry equality at zero tolerance yields zero pairs. The user explicitly requested more consideration after a proposed 1 mm / 99% length criterion. That proposal is not approved. Diagnostic files are not operational classifications or tile flags. `/comparison/sewer/metadata` returns `503 criteria_pending`; no sewer tile sidecar route is registered. Existing water criteria remain unchanged.

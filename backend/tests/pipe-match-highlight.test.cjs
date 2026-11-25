@@ -234,7 +234,7 @@ test('unavailable sewer criteria remain pending without implying a comparison re
   f.setLayers(['kict_sewer_seoul', 'sb001']); await flush();
   f.requests[0].resolve({available: false, message: '하수 비교 기준 확인이 필요합니다.'}, false); await flush();
   const state = f.service.state().pairs.sewer;
-  assert.equal(state.highlightLabel, '비교 결과 대기');
+  assert.equal(state.highlightLabel, '3자리 반올림 후 형상 일치');
   assert.equal(state.message, '하수 비교 기준 확인이 필요합니다.');
   assert.equal(f.requests.length, 1, 'unavailable criteria never request or manufacture tile flags');
   assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10), f.base);

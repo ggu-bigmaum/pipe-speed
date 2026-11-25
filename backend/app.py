@@ -94,6 +94,7 @@ app.register_blueprint(create_comparison_tiles_blueprint(ROOT / 'data', package=
 from sewer_comparison import SewerPackage, create_sewer_comparison_blueprint
 _sewer_comparison_package = SewerPackage(ROOT / 'data' / 'comparison' / 'sewer')
 app.register_blueprint(create_sewer_comparison_blueprint(package=_sewer_comparison_package))
+app.register_blueprint(create_comparison_tiles_blueprint(ROOT / 'data', package=_sewer_comparison_package, comparison='sewer'))
 CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)
