@@ -25,6 +25,8 @@ const out = process.env.PIPE_TEST_OUT;
   }
   try {
     await page.goto(base+'?dataset=kict_sewer_seoul',{waitUntil:'domcontentloaded'});await ready();
+    await page.locator('#legacyWaterGroup > summary').click();
+    await page.locator('#legacySewerGroup > summary').click();
     assert.equal(new URL(page.url()).pathname, new URL(base).pathname, 'main page stays at its entry URL');
     assert.equal(await page.locator('#sewerCase1').count(),1,'sewer Case1 selector exists');
     assert.equal(await page.evaluate(()=>pipeDistance.getMeta().dataset_id),'kict_sewer_seoul');

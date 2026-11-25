@@ -16,8 +16,21 @@
   });
   let selectedDataset = datasets.find(d => d.id === requestedDataset) || datasets[0];
   let datasetRevision = 0;
+  let rasterEntries = [], currentSources = [];
   const datasetApi = (dataset, path) => prefix + dataset.route + path;
-  const api = path => datasetApi(selectedDataset, path);
+  const metadataExtent = m => [m.origin[0], m.origin[1] - m.height * m.pixel_size[1], m.origin[0] + m.width * m.pixel_size[0], m.origin[1]];
+  async function mapLimited(items, callback, signal) {
+    const results = new Array(items.length); let cursor = 0, failure;
+    await Promise.all(Array.from({length: Math.min(4, items.length)}, async () => {
+      while (cursor < items.length && !failure && !signal.aborted) {
+        const index = cursor++;
+        try { results[index] = await callback(items[index], index); } catch (error) { failure ||= error; }
+      }
+    }));
+    if (signal.aborted) throw new DOMException('중단', 'AbortError');
+    if (failure) throw failure;
+    return results;
+  }
   const rasterInputs = () => [...document.querySelectorAll('input[data-raster]')].map(input => input.id);
   const rasterChecked = () => rasterInputs().some(id => $(id).checked);
   function checkRaster(id) {
@@ -164,21 +177,22 @@
     gridLayer?.setVisible(false);
     sourceRevision++;
     if (currentLayer) { map.removeLayer(currentLayer); currentLayer.dispose(); }
-    if (currentSource) currentSource.dispose();
+    for (const source of currentSources) source.dispose();
+    currentSources = [];
     currentLayer = currentSource = null;
   }
-  function afterRender(signal, source) {
+  function afterRender(signal, sources = currentSources.slice()) {
     return new Promise((resolve, reject) => {
       let done = false;
       const finish = error => {
-        if (done) return; done = true; clearTimeout(timer); map.un('rendercomplete', rendered); source?.un('tileloaderror', failed); signal?.removeEventListener('abort', aborted);
+        if (done) return; done = true; clearTimeout(timer); map.un('rendercomplete', rendered); sources.forEach(source => source.un('tileloaderror', failed)); signal?.removeEventListener('abort', aborted);
         error ? reject(error) : resolve();
       };
       const rendered = async () => { await frame(); await frame(); finish(signal?.aborted ? new DOMException('중단', 'AbortError') : document.hidden ? new Error('탭이 숨겨져 측정을 중단했습니다.') : null); };
       const failed = () => finish(new Error('래스터 해석·그리기에 실패했습니다.'));
       const aborted = () => finish(new DOMException('중단', 'AbortError'));
       const timer = setTimeout(() => finish(new Error('30초 안에 래스터 표시가 끝나지 않았습니다.')), 30000);
-      map.on('rendercomplete', rendered); source?.on('tileloaderror', failed); signal?.addEventListener('abort', aborted, {once: true});
+      map.on('rendercomplete', rendered); sources.forEach(source => source.on('tileloaderror', failed)); signal?.addEventListener('abort', aborted, {once: true});
       if (signal?.aborted) aborted(); else map.render();
     });
   }
@@ -189,28 +203,38 @@
     checkRaster(id);
     measureTab('raster'); $('measureCase').textContent = caseName(id);
     metrics(null, null, null); $('measurementInfo').textContent = '다운로드 및 표출 중…'; status(`${caseName(id)} 원본 읽는 중…`);
-    const file = meta.cases.find(c => c.id === id), controller = active;
+    const controller = active;
     let started, downloadDone, byteCount, success = false;
     try {
       removeRaster(); await frame(); started = performance.now();
-      const response = await fetch(api('files/' + file.filename + '?fresh=' + Date.now()), {cache: 'no-store', signal: controller.signal});
-      if (!response.ok) throw new Error(`원본 파일을 받지 못했습니다 (${response.status}).`);
-      const data = await response.arrayBuffer(); downloadDone = performance.now(); byteCount = data.byteLength;
-      if (controller.signal.aborted) throw new DOMException('중단', 'AbortError');
-      currentSource = new ol.source.GeoTIFF({sources: [{blob: new Blob([data]), nodata: meta.nodata}], normalize: false, interpolate: false, transition: 0, wrapX: false});
-      const sourceView = await currentSource.getView();
-      if (controller.signal.aborted) throw new DOMException('중단', 'AbortError');
-      if (sourceView.projection.getCode() !== meta.crs) throw new Error('TIF와 result의 좌표계가 다릅니다.');
+      const downloads = await mapLimited(rasterEntries, async entry => {
+        const file = entry.meta.cases.find(c => c.id === id);
+        const response = await fetch(datasetApi(entry.dataset, 'files/' + file.filename + '?fresh=' + Date.now()), {cache: 'no-store', signal: controller.signal});
+        if (!response.ok) throw new Error(`${entry.dataset.label} 원본 파일을 받지 못했습니다 (${response.status}).`);
+        return {entry, data: await response.arrayBuffer()};
+      }, controller.signal);
+      downloadDone = performance.now(); byteCount = downloads.reduce((sum, item) => sum + item.data.byteLength, 0);
+      const sources = await mapLimited(downloads, async ({entry, data}) => {
+        const source = new ol.source.GeoTIFF({sources: [{blob: new Blob([data]), nodata: entry.meta.nodata}], normalize: false, interpolate: false, transition: 0, wrapX: false});
+        source.set('dataset_id', entry.dataset.id);
+        currentSources.push(source);
+        const sourceView = await source.getView();
+        if (sourceView.projection.getCode() !== entry.meta.crs) throw new Error('TIF와 result의 좌표계가 다릅니다.');
+        source.setTileGridForProjection(view.getProjection(), ol.tilegrid.createXYZ({maxZoom: view.getMaxZoom()}));
+        return {source, extent: ol.proj.transformExtent(metadataExtent(entry.meta), entry.meta.crs, view.getProjection(), 24)};
+      }, controller.signal);
+      currentSources = sources.map(item => item.source); currentSource = currentSources[0];
       // Reproject at the display zoom. The default grid stops near the 100 m
       // source resolution; enlarging those coarse Mercator pixels moves the
       // apparent cell boundaries away from the original UTM grid.
-      currentSource.setTileGridForProjection(view.getProjection(), ol.tilegrid.createXYZ({maxZoom: view.getMaxZoom()}));
-      currentLayer = new ol.layer.WebGLTile({source: currentSource, style: rasterStyle(), opacity: Number($('opacity').value) / 100});
+      currentLayer = new ol.layer.WebGLTile({source: currentSource,
+        ...(sources.length > 1 ? {sources: extent => sources.filter(item => ol.extent.intersects(extent, item.extent)).map(item => item.source)} : {}),
+        style: rasterStyle(), opacity: Number($('opacity').value) / 100});
       map.getLayers().insertAt(0, currentLayer);
-      await afterRender(controller.signal, currentSource); visibleDocument();
+      await afterRender(controller.signal); visibleDocument();
       const ended = performance.now(), download = downloadDone - started, display = ended - downloadDone;
       metrics(download, display, ended - started);
-      $('measurementInfo').textContent = `${file.filename} · ${(byteCount / 1000).toFixed(1)} KB · HTTP 캐시 우회`;
+      $('measurementInfo').textContent = `${downloads.length > 1 ? downloads.length + '개 지역 TIF' : meta.cases.find(c => c.id === id).filename} · ${(byteCount / 1000).toFixed(1)} KB · HTTP 캐시 우회`;
       addRecord({type: '원본 읽기', download_ms: download, display_ms: display, total_ms: ended - started, bytes: byteCount, status: '완료'});
       status(`${caseName(id)} 표시 완료 · 격자를 클릭해 보세요.`); success = true;
     } catch (error) {
@@ -251,33 +275,39 @@
   async function loadGrid() {
     if (!meta || !currentLayer?.getVisible()) return;
     cancelGrid();
-    const revision = gridRevision, dataRevision = datasetRevision, dataset = selectedDataset, metadata = meta;
+    const revision = gridRevision, dataRevision = datasetRevision, dataset = selectedDataset;
     const controller = gridController = new AbortController();
-    let path = 'gridlines';
-    if (metadata.grid_mode === 'viewport') {
-      const bounds = viewportGridBounds(metadata);
-      const count = bounds ? (bounds.max_col - bounds.min_col + 1) * (bounds.max_row - bounds.min_row + 1) : 0;
-      if (!bounds || view.getZoom() < 12 || count > (metadata.grid_cell_limit || 12000)) {
+    const requests = rasterEntries.map(entry => {
+      if (entry.meta.grid_mode !== 'viewport') return {...entry, path: 'gridlines', count: 0};
+      const bounds = viewportGridBounds(entry.meta);
+      return bounds ? {...entry, path: 'gridlines?' + new URLSearchParams(bounds), count: (bounds.max_col - bounds.min_col + 1) * (bounds.max_row - bounds.min_row + 1)} : null;
+    }).filter(Boolean);
+    if (meta.grid_mode === 'viewport') {
+      const count = requests.reduce((sum, request) => sum + request.count, 0);
+      if (!requests.length || view.getZoom() < 12 || count > (meta.grid_cell_limit || 12000)) {
         gridLayer.getSource().clear(); gridDatasetId = null; syncLegend();
-        gridHint(bounds ? '격자선을 보려면 지도를 확대해 주세요.' : '선택 지역의 격자 범위 밖입니다.');
+        gridHint(requests.length ? '격자선을 보려면 지도를 확대해 주세요.' : '선택 지역의 격자 범위 밖입니다.');
         return;
       }
-      path += '?' + new URLSearchParams(bounds);
     }
     try {
-      const data = await json(datasetApi(dataset, path), {cache: 'no-store', signal: controller.signal});
+      const results = await mapLimited(requests, request => json(datasetApi(request.dataset, request.path), {cache: 'no-store', signal: controller.signal}), controller.signal);
       if (controller.signal.aborted || revision !== gridRevision || dataRevision !== datasetRevision || dataset !== selectedDataset || !currentLayer?.getVisible()) return;
-      if (data.omitted) {
+      const omitted = results.find(data => data.omitted);
+      if (omitted) {
         gridLayer.getSource().clear(); gridDatasetId = null; syncLegend();
-        gridHint(data.reason || '격자선을 보려면 지도를 확대해 주세요.'); return;
+        gridHint(omitted.reason || '격자선을 보려면 지도를 확대해 주세요.'); return;
       }
-      const step = Math.min(...data.pixel_size);
-      const lines = data.geometry.coordinates.map(([a, b]) => {
-        const count = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
-        return Array.from({length: count + 1}, (_, i) => [a[0] + (b[0] - a[0]) * i / count, a[1] + (b[1] - a[1]) * i / count]);
+      const features = results.map(data => {
+        const step = Math.min(...data.pixel_size);
+        const lines = data.geometry.coordinates.map(([a, b]) => {
+          const count = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+          return Array.from({length: count + 1}, (_, i) => [a[0] + (b[0] - a[0]) * i / count, a[1] + (b[1] - a[1]) * i / count]);
+        });
+        return new ol.Feature(new ol.geom.MultiLineString(lines).transform(data.crs, view.getProjection()));
       });
       gridLayer.getSource().clear();
-      gridLayer.getSource().addFeature(new ol.Feature(new ol.geom.MultiLineString(lines).transform(data.crs, view.getProjection())));
+      gridLayer.getSource().addFeatures(features);
       gridDatasetId = dataset.id; gridHint();
       syncLegend();
     } catch (error) {
@@ -292,7 +322,7 @@
     }
     busy = true; active = new AbortController(); const controller = active;
     ++datasetRevision; closeDetails(); removeRaster(); cancelGrid(true); gridHint();
-    selectedDataset = dataset; selectedCase = id; meta = null;
+    selectedDataset = dataset; selectedCase = id; meta = null; rasterEntries = [];
     $('downloadResult').removeAttribute('href');
     rasterInputs().forEach(input => { $(input).checked = false; });
     $(dataset.inputs[id]).checked = true;
@@ -300,15 +330,25 @@
     $('measureCase').textContent = `${dataset.label} · 자료 확인 중`;
     let loaded = false;
     try {
-      const nextMeta = await json(datasetApi(dataset, 'meta'), {cache: 'no-store', signal: controller.signal});
-      if (controller.signal.aborted) throw new DOMException('중단', 'AbortError');
-      if (nextMeta.dataset_id !== dataset.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
-      selectedDataset = dataset; meta = nextMeta;
-      $('downloadResult').href = api('files/' + meta.result_filename);
+      const entries = await mapLimited(dataset.members || [dataset], async member => {
+        const m = await json(datasetApi(member, 'meta'), {cache: 'no-store', signal: controller.signal});
+        if (m.dataset_id !== member.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
+        return {dataset: member, meta: m};
+      }, controller.signal);
+      if (!entries.length) throw new Error('표시할 지역 자료가 없습니다.');
+      rasterEntries = entries; meta = entries[0].meta;
+      if (dataset.members) {
+        if (entries.some(entry => entry.meta.crs !== meta.crs || entry.meta.pixel_size.some((size, i) => size !== meta.pixel_size[i]))) throw new Error('지역 자료의 좌표계·격자 크기가 서로 다릅니다.');
+        const extent = ol.extent.createEmpty(); entries.forEach(entry => ol.extent.extend(extent, metadataExtent(entry.meta)));
+        meta = {...meta, dataset_id: dataset.id, label: dataset.label, origin: [extent[0], extent[3]],
+          width: (extent[2] - extent[0]) / meta.pixel_size[0], height: (extent[3] - extent[1]) / meta.pixel_size[1],
+          result_filename: null, result_count: entries.reduce((sum, entry) => sum + entry.meta.result_count, 0), region_count: entries.length};
+      } else $('downloadResult').href = datasetApi(dataset, 'files/' + meta.result_filename);
       if (dataset.utility) $(nationalGroups.find(group => group.utility === dataset.utility).stem + 'Region').value = dataset.code;
       fit();
       loaded = true;
     } catch (error) {
+      meta = null; rasterEntries = [];
       $(dataset.inputs[id]).checked = false; syncLegend();
       status(controller.signal.aborted ? '자료 전환을 중단했습니다.' : error.message, !controller.signal.aborted);
     }
@@ -337,6 +377,10 @@
         const select = $(group.stem + 'Region'); select.replaceChildren();
         group.regions = data.regions.map(region => ({...region, regionLabel: region.label, id: region.dataset_id, utility: group.utility, inputs: group.inputs,
           label: `건기연 ${group.utility === 'water' ? '상수' : '하수'}(전국${group.utility === 'sewer' ? '·보정본' : ''}) · ${region.label}`}));
+        const members = group.regions.filter(region => region.available);
+        group.regions.unshift({code: 'all', id: `kict_${group.utility}_national_all`, regionLabel: '전국',
+          label: `건기연 ${group.utility === 'water' ? '상수' : '하수'}(전국${group.utility === 'sewer' ? '·보정본' : ''})`,
+          utility: group.utility, inputs: group.inputs, available: members.length > 0, members});
         for (const region of group.regions) {
           const option = document.createElement('option'); option.value = region.code; option.disabled = !region.available;
           option.textContent = region.available ? region.regionLabel : `${region.regionLabel} · ${region.reason || '자료 없음'}`;
@@ -385,22 +429,30 @@
     $('detailTitle').textContent = `${selectedDataset.label} · 선택 격자`;
     $('detailPanel').hidden = false;
     const sequence = ++clickSeq; clickController?.abort(); clickController = new AbortController();
+    const controller = clickController;
     selection.clear(); $('cellDetails').hidden = true;
-    const cell = core.cellAt(ol.proj.transform(coordinate, 'EPSG:3857', meta.crs), meta);
-    if (!cell) { $('pickMessage').textContent = '자료 범위 밖입니다.'; return; }
+    if (selectedDataset.members) $('downloadResult').removeAttribute('href');
+    const candidates = rasterEntries.map(entry => ({...entry, cell: core.cellAt(ol.proj.transform(coordinate, 'EPSG:3857', entry.meta.crs), entry.meta)})).filter(entry => entry.cell);
+    if (!candidates.length) { $('pickMessage').textContent = '자료 범위 밖입니다.'; return; }
     $('pickMessage').textContent = 'result 조회 중…';
     try {
-      const d = await json(api(`cell?col=${cell.col}&row=${cell.row}`), {signal: clickController.signal, cache: 'no-store'});
+      const results = await mapLimited(candidates, async entry => ({...entry,
+        data: await json(datasetApi(entry.dataset, `cell?col=${entry.cell.col}&row=${entry.cell.row}`), {signal: controller.signal, cache: 'no-store'})}), controller.signal);
       if (sequence !== clickSeq) return;
-      if (!d.matched) { $('pickMessage').textContent = '값이 없는 격자입니다 (NoData).'; return; }
-      if (d.dataset_id !== selectedDataset.id) throw new Error('선택한 자료와 조회 결과의 구분이 다릅니다.');
+      // Regional bounding boxes overlap; only a valid result cell identifies the region.
+      const match = results.reverse().find(entry => entry.data.matched);
+      if (!match) { $('pickMessage').textContent = '값이 없는 격자입니다 (NoData).'; return; }
+      const {data: d, cell, meta: cellMeta, dataset: cellDataset} = match;
+      if (d.dataset_id !== cellDataset.id) throw new Error('선택한 자료와 조회 결과의 구분이 다릅니다.');
+      $('detailTitle').textContent = `${cellDataset.label} · 선택 격자`;
+      $('downloadResult').href = datasetApi(cellDataset, 'files/' + cellMeta.result_filename);
       $('pickMessage').textContent = 'result의 원래 격자 ID로 연결했습니다.'; $('cellDetails').hidden = false;
       $('gridId').textContent = d.grid_id; $('value1').textContent = number(d.case1_m) + ' m'; $('value2').textContent = number(d.case2_m) + ' m';
       $('passFlag').textContent = d.pass_flag ? '통과' : '미통과'; $('pipeId').textContent = d.pipe_id ?? '없음';
       $('nearXY').textContent = `${number(d.near_x)} / ${number(d.near_y)}`; $('nearLonLat').textContent = `${d.near_lon.toFixed(7)} / ${d.near_lat.toFixed(7)}`;
-      const tx = xy => ol.proj.transform(xy, meta.crs, 'EPSG:3857');
-      const center = tx(d.center), near = tx([d.near_x, d.near_y]), [sx, sy] = meta.pixel_size;
-      const x = meta.origin[0] + cell.col * sx, y = meta.origin[1] - cell.row * sy;
+      const tx = xy => ol.proj.transform(xy, cellMeta.crs, 'EPSG:3857');
+      const center = tx(d.center), near = tx([d.near_x, d.near_y]), [sx, sy] = cellMeta.pixel_size;
+      const x = cellMeta.origin[0] + cell.col * sx, y = cellMeta.origin[1] - cell.row * sy;
       const polygon = [[x, y], [x + sx, y], [x + sx, y - sy], [x, y - sy], [x, y]].map(tx);
       selection.addFeatures([
         new ol.Feature({kind: 'cell', geometry: new ol.geom.Polygon([polygon])}),
@@ -486,7 +538,7 @@
       // View changes happen before the moved frame is rendered. Each later
       // change invalidates the previous interval; hidden tabs never contribute.
       const revision = sourceRevision, id = selectedCase, t = performance.now();
-      try { await afterRender(controller.signal, currentSource); } catch (_) { return; }
+      try { await afterRender(controller.signal); } catch (_) { return; }
       if (controller.signal.aborted || revision !== sourceRevision || busy || running || document.hidden || !currentLayer?.getVisible()) return;
       const elapsed = performance.now() - t;
       $('moveMs').textContent = ms(elapsed);
@@ -498,7 +550,7 @@
     map.on('moveend', scheduleGrid);
     ready = true; controls();
     // Read-only diagnostics for browser regression tests.
-    window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice()};
+    window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getSources: () => currentSources.slice(), getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice()};
     const catalogReady = loadNationalCatalog();
     if (requestedDataset?.startsWith('kict_water_national_') || requestedDataset?.startsWith('kict_sewer_national_')) {
       await catalogReady;
@@ -508,6 +560,9 @@
         throw new Error(dataset ? `${dataset.label} · ${dataset.reason || '자료 없음'}` : '요청한 전국 지역 자료를 확인하지 못했습니다.');
       }
       await switchDataset(dataset, 'case1');
-    } else await switchDataset(selectedDataset, 'case1');
+    } else {
+      if (!requestedDataset) { await catalogReady; selectedDataset = datasets.find(item => item.id === 'kict_water_national_all' && item.available) || selectedDataset; }
+      await switchDataset(selectedDataset, 'case1');
+    }
   } catch (error) { status(error.message, true); $('pickMessage').textContent = '자료 연결이 완료되지 않았습니다.'; }
 })();

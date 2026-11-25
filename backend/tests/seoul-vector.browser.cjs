@@ -13,7 +13,9 @@ const output = process.env.PIPE_TEST_OUT;
     page.on('response', response => {
       if (/\/tiles\/sa001\/\d+\//.test(response.url())) requests.push({path:new URL(response.url()).pathname,status:response.status()});
     });
-    await page.goto(base, {waitUntil:'domcontentloaded'});
+    await page.goto(base+'?dataset=kict_water_seoul', {waitUntil:'domcontentloaded'});
+    await page.locator('#legacyWaterGroup > summary').click();
+    await page.locator('#legacySewerGroup > summary').click();
     await page.waitForFunction(() => window.pipeDistance?.getVectors().find(e => e.id === 'sa001')?.source);
     if (await page.locator('#case1').isChecked()) await page.locator('#case1').uncheck();
     await page.evaluate(() => {
