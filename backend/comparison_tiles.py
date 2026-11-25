@@ -194,12 +194,14 @@ class ComparisonTileSidecars:
             # Portable cache key: no absolute PC-specific paths.
             disk_key = ('single-display-v1', info['version'], str(path.relative_to(self.data)), *fingerprint[1:])
             payload = self.disk.get(self.layer, (z,x,y), disk_key)
+            built = payload is None
             if payload is None:
                 payload = self._build(path, info['version'], (z,x,y)) if path.suffix == '.mbtiles' else self._build(path, info['version'])
             if fingerprint != self._fingerprint(path) or self.package.verified()['version'] != info['version']:
                 raise ValueError('Comparison inputs changed during sidecar construction')
             self._remember(key, payload)
-            self.disk.put(self.layer, (z,x,y), disk_key, payload)
+            if built:
+                self.disk.put(self.layer, (z,x,y), disk_key, payload)
             return payload
         finally:
             self._build_slot.release()
