@@ -592,7 +592,7 @@
   }
   try {
     if (!window.ol || !window.GeoTIFF) throw new Error('지도 라이브러리를 불러오지 못했습니다.');
-    view = new ol.View({projection: 'EPSG:3857', center: ol.proj.fromLonLat([126.98, 37.56]), zoom: 11, minZoom: 6, maxZoom: 20, constrainResolution: true, enableRotation: false});
+    view = new ol.View({projection: 'EPSG:3857', center: ol.proj.fromLonLat([127.7, 36.0]), zoom: 7, minZoom: 6, maxZoom: 20, constrainResolution: true, enableRotation: false});
     selection = new ol.source.Vector();
     const selectionStyles = {
       cell: [
@@ -664,7 +664,8 @@
         await catalogReady;
         selectedDataset = datasets.find(item => item.id === 'kict_water_national_all' && item.available) || selectedDataset;
         rasterInputs().forEach(input => { $(input).checked = false; });
-        fit(); ready = true; syncLegend(); controls(); status('왼쪽에서 표시할 레이어를 선택하세요.');
+        // Keep the initial Korea view; dataset fitting is only needed after selection.
+        ready = true; syncLegend(); controls(); status('왼쪽에서 표시할 레이어를 선택하세요.');
       } else {
         if (selectedDataset.statusStem) await municipalReady;
         ready = true; controls();
