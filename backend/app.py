@@ -77,7 +77,14 @@ app.register_blueprint(create_distance_blueprint(
     ROOT / 'data' / 'distance' / 'kict_sewer_seoul', name='distance_sewer',
     url_prefix='/distance/kict_sewer_seoul', dataset_id='kict_sewer_seoul',
     label='건기연 하수(서울·보정본)', result_filename='pipe_dist_result.csv'))
+for dataset_id, label in [('seoul_water', '서울시 상수'), ('seoul_sewer', '서울시 하수')]:
+    app.register_blueprint(create_distance_blueprint(
+        ROOT / 'data' / 'distance' / dataset_id, name='distance_' + dataset_id,
+        url_prefix='/distance/' + dataset_id, dataset_id=dataset_id, label=label,
+        result_filename='pipe_dist_result.csv', require_dataset_id=True))
 app.register_blueprint(create_national_distance_blueprint(ROOT / 'data' / 'distance'))
+from reference_sewer import create_reference_sewer_blueprint
+app.register_blueprint(create_reference_sewer_blueprint(ROOT / 'data' / 'reference_sewer'))
 CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)

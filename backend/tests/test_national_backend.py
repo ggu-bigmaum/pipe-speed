@@ -223,7 +223,7 @@ def mvt_layer(name):
 @pytest.fixture
 def tile_client(tmp_path):
     assert importlib.util.find_spec('national_tiles'), 'National merged tile routes are not implemented'
-    from national_tiles import create_national_sewer_tiles_blueprint
+    from national_tiles import create_national_sewer_tiles_blueprint, REGIONS, DATA_POLICY
     roots = {}
     for key in TILE_KEYS:
         directory = tmp_path / ('full' if key == 'kict_sewer_seoul' else 'national') / key
@@ -233,6 +233,10 @@ def tile_client(tmp_path):
         metadata = dict(name=key, bounds='126,33,130,39', minzoom=6, maxzoom=17,
                         json=json.dumps({'vector_layers': [{'id': key, 'fields': {'id': 'Number'}}]}))
         (directory / 'metadata.json').write_text(json.dumps(metadata))
+        if key != 'kict_sewer_seoul':
+            (directory / 'conversion_complete.json').write_text(json.dumps({
+                'status':'complete', 'data_policy':DATA_POLICY,
+                'source_features':dict(REGIONS)[key], 'raw_originals_verified':True}))
     for key in [TILE_KEYS[0], TILE_KEYS[1], TILE_KEYS[-1]]:
         path = roots[key] / '6' / '55' / '24.pbf'
         path.parent.mkdir(exist_ok=True)
@@ -246,8 +250,9 @@ def test_national_tiles_metadata_includes_all_internal_layer_names(tile_client):
     response = tile_client[0].get('/tiles/kict_sewer_national/meta.json')
     assert response.status_code == 200
     metadata = response.get_json()
-    assert metadata['vector_layer_ids'] == TILE_KEYS
-    assert metadata['count'] == 4063444 and metadata['complete'] is True
+    assert metadata['vector_layer_ids'] == TILE_KEYS[:-1]
+    assert metadata['count'] == 3634657 and metadata['complete'] is True
+    assert metadata['scope'] == 'outside-seoul'
     assert metadata['bounds'] == [126, 33, 130, 39]
     assert (metadata['minzoom'], metadata['maxzoom']) == (6, 17)
     assert metadata['excluded_regions'] == ['전라남도']
@@ -255,7 +260,7 @@ def test_national_tiles_metadata_includes_all_internal_layer_names(tile_client):
 
 def test_tiles_concatenate_layers_and_negotiate_gzip(tile_client):
     client, _ = tile_client
-    expected = b''.join(mvt_layer(k) for k in [TILE_KEYS[0], TILE_KEYS[1], TILE_KEYS[-1]])
+    expected = b''.join(mvt_layer(k) for k in [TILE_KEYS[0], TILE_KEYS[1]])
     for encoding, compressed in [('gzip', True), ('identity', False), ('gzip;q=0', False)]:
         response = client.get('/tiles/kict_sewer_national/6/55/24.pbf', headers={'Accept-Encoding': encoding})
         assert response.status_code == 200
@@ -281,8 +286,8 @@ def test_incomplete_tile_installation_reports_available_count_and_refuses_partia
     client, roots = tile_client
     (roots[TILE_KEYS[0]] / 'metadata.json').unlink()
     metadata = client.get('/tiles/kict_sewer_national/meta.json').get_json()
-    assert metadata['count'] == 4063444 - 244875
-    assert metadata['expected_count'] == 4063444 and metadata['complete'] is False
+    assert metadata['count'] == 3634657 - 243135
+    assert metadata['expected_count'] == 3634657 and metadata['complete'] is False
     assert TILE_KEYS[0] in metadata['missing_regions']
     assert TILE_KEYS[0] not in metadata['vector_layer_ids']
     assert client.get('/tiles/kict_sewer_national/6/55/24.pbf').status_code == 503
@@ -294,6 +299,19 @@ def test_corrupt_deflate_returns_safe_503(tile_client):
     response = client.get('/tiles/kict_sewer_national/6/55/24.pbf')
     assert response.status_code == 503
     assert response.headers['Cache-Control'] == 'no-store'
+
+
+def test_outside_seoul_does_not_depend_on_or_serve_the_seoul_layer(tile_client):
+    client, roots = tile_client
+    # Seoul is installed but belongs only to its separate selectable layer.
+    (roots['kict_sewer_seoul'] / 'metadata.json').unlink()
+    (roots['kict_sewer_seoul'] / '6/55/24.pbf').write_bytes(b'corrupt Seoul tile')
+    metadata = client.get('/tiles/kict_sewer_national/meta.json').get_json()
+    assert metadata['complete'] is True
+    assert 'kict_sewer_seoul' not in metadata['vector_layer_ids']
+    response = client.get('/tiles/kict_sewer_national/6/55/24.pbf')
+    assert response.status_code == 200
+    assert response.data == mvt_layer(TILE_KEYS[0]) + mvt_layer(TILE_KEYS[1])
 
 
 def test_tile_decompression_is_bounded(tile_client, monkeypatch):

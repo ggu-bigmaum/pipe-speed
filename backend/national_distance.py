@@ -15,7 +15,7 @@ REGIONS = (
     ('35', '전북특별자치도'), ('36', '전라남도'), ('37', '경상북도'),
     ('38', '경상남도'), ('39', '제주특별자치도'),
 )
-UTILITIES = {'water': '건기연 상수', 'sewer': '건기연 하수·보정본'}
+UTILITIES = {'water': '건기연 상수', 'sewer': '건기연 하수'}
 FILES = ('pipe_case1_m.tif', 'pipe_case2_m.tif', 'pipe_dist_result.csv')
 SOURCES = FILES + ('grid_index.json',)
 GRID_CELL_LIMIT = 12000
@@ -31,6 +31,7 @@ class NationalDistanceData:
             abort(404)
         self.directory = Path(root) / ('kict_' + utility + '_national') / code
         self.dataset_id = 'kict_{}_national_{}'.format(utility, code)
+        self.requires_original = utility == 'sewer' and code != '11'
         self.unavailable = utility == 'sewer' and code == '36'
 
     def metadata(self):
@@ -38,6 +39,8 @@ class NationalDistanceData:
         if self.unavailable:
             raise ValueError('전라남도 하수 자료가 없습니다.')
         data = json.loads((self.directory / 'dataset.json').read_text(encoding='utf-8'))
+        if self.requires_original and data.get('data_policy') != 'original-outside-seoul-v1':
+            raise ValueError('원본 기준 하수 자료 교체가 필요합니다.')
         if data['dataset_id'] != self.dataset_id or data['result_filename'] != FILES[2]:
             raise ValueError('자료 식별자가 다릅니다.')
         if data['crs'] != 'EPSG:32652':

@@ -81,20 +81,25 @@
       measure('벡터타일 다시 읽기');
     };
     const layers = config.LAYERS || [];
-    $('vectorCount').textContent = layers.length; $('layerCount').textContent = layers.length + document.querySelectorAll('input[data-raster]').length;
+    const mainCount = layers.filter(layer => !layer.reference).length;
+    $('vectorCount').textContent = mainCount; $('layerCount').textContent = mainCount + '종';
     for (const layer of layers) {
       const row = document.createElement('label'), checkbox = document.createElement('input'), copy = document.createElement('span'), title = document.createElement('strong'), note = document.createElement('small'), line = document.createElement('span');
       row.className = 'layer-row'; checkbox.type = 'checkbox'; checkbox.disabled = true; checkbox.id = 'vector-' + layer.id;
-      copy.className = 'layer-copy'; title.textContent = layer.label; note.textContent = '자료 확인 중…';
-      line.className = 'layer-line'; line.style.background = layer.color || '#4dabf7'; copy.append(title, note); row.append(checkbox, copy, line); $('vectorList').append(row);
-      const entry = {...layer, readyNote: layer.note || '벡터타일', color: layer.color || '#4dabf7', row, checkbox, note, source: null, layer: null, failed: false, generation: 0, tileGenerations: new WeakMap(), failedTiles: new Map(), retryTiles: new Map(), requests: new Map(), cancelledTiles: new WeakSet()}; entries.push(entry);
+      copy.className = 'layer-copy'; title.textContent = layer.listLabel || layer.label; note.textContent = '자료 확인 중…';
+      row.title = [layer.listLabel || layer.label, layer.badge, layer.note].filter(Boolean).join(' · ');
+      checkbox.setAttribute('aria-label', row.title);
+      if (layer.badge) { const badge = document.createElement('span'); badge.className = 'scope-badge'; badge.textContent = layer.badge; title.append(badge); }
+      line.className = 'layer-line'; line.style.background = layer.color || '#4dabf7'; copy.append(title, note); row.append(checkbox, copy, line); $(layer.container || 'vectorList').append(row);
+      const entry = {...layer, readyNote: '', color: layer.color || '#4dabf7', row, checkbox, note, source: null, layer: null, failed: false, generation: 0, tileGenerations: new WeakMap(), failedTiles: new Map(), retryTiles: new Map(), requests: new Map(), cancelledTiles: new WeakSet()}; entries.push(entry);
       checkbox.onchange = () => {
         if (entry.failed && checkbox.checked) refresh(entry);
-        entry.layer.setVisible(checkbox.checked); cancelObsolete(); onChange(); onSelect(); measure();
+        entry.layer.setVisible(checkbox.checked); entry.overlay?.setVisible(checkbox.checked); cancelObsolete(); onChange(); onSelect(); measure();
       };
       (async () => {
         try {
-          const response = await fetch(tilesBase + encodeURIComponent(entry.id) + '/meta.json', {cache: 'no-store', signal: AbortSignal.timeout(10000)});
+          const tileId = entry.tileId || entry.id;
+          const response = await fetch(tilesBase + encodeURIComponent(tileId) + '/meta.json', {cache: 'no-store', signal: AbortSignal.timeout(10000)});
           if (!response.ok) throw new Error(response.status === 404 ? '자료 없음 · 서버 데이터 연결 필요' : '자료 확인 실패');
           const meta = await response.json();
           if (meta.complete === false) throw new Error(`설치 미완료 · ${meta.missing_regions?.length || '일부'}개 지역 자료 확인 필요`);
@@ -111,7 +116,7 @@
           };
           const source = new ol.source.VectorTile({
             format, minZoom: meta.minzoom, maxZoom: meta.maxzoom, tileSize: config.TILE_SIZE || 512, wrapX: false, transition: 0,
-            url: tilesBase + encodeURIComponent(entry.id) + '/{z}/{x}/{y}.pbf',
+            url: tilesBase + encodeURIComponent(tileId) + '/{z}/{x}/{y}.pbf',
             tileLoadFunction(tile, url) {
               tile.setLoader(async (extent, resolution, projection) => {
                 const controller = new AbortController(), timer = setTimeout(() => controller.abort('timeout'), 30000);
@@ -149,6 +154,18 @@
           });
           entry.source = source;
           entry.layer = new ol.layer.VectorTile({source, visible: false, zIndex: 10, style: featureStyle});
+          if (entry.overlayPath) {
+            const base = config.API_BASE ? config.API_BASE.replace(/\/$/, '') + '/' : new URL('../', location.href).href;
+            const response = await fetch(base + entry.overlayPath, {signal: AbortSignal.timeout(30000)});
+            if (!response.ok) throw new Error('참고용 보정 자료 확인 필요');
+            const data = await response.json();
+            if (data.type !== 'FeatureCollection' || !Array.isArray(data.features)) throw new Error('보정 연결 자료 형식 확인 필요');
+            const features = new ol.format.GeoJSON().readFeatures(data, {dataProjection:'EPSG:4326', featureProjection:view.getProjection()});
+            entry.overlay = new ol.layer.Vector({source:new ol.source.Vector({features}),visible:false,zIndex:11,
+              style:new ol.style.Style({stroke:new ol.style.Stroke({color:'#df7c24',width:3})})});
+            map.addLayer(entry.overlay);
+            entry.readyNote = '회색: 원본 · 주황: 추가 연결';
+          }
           map.addLayer(entry.layer); checkbox.disabled = false; note.textContent = entry.readyNote;
         } catch (error) { row.classList.add('unavailable'); note.textContent = error.message; row.title = error.message; }
       })();

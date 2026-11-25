@@ -128,9 +128,9 @@ const output = process.env.PIPE_TEST_OUT;
       const features=entry.format.readFeatures(data,{extent:entry.source.getTileGrid().getTileCoordExtent([6,54,24]),featureProjection:'EPSG:3857'});
       return {metadata:m.vector_layer_ids, layers:[...new Set(features.map(f=>f.get('layer')))],count:features.length};
     });
-    assert.equal(decoded.metadata.length,17);assert.ok(decoded.count>0);assert.ok(decoded.layers.length>1,'MVT must decode multiple original regional layer IDs');
-    assert.ok(decoded.layers.includes('kict_sewer_seoul'));
-    note('composed national MVT decodes multiple original layer names including Seoul');
+    assert.equal(decoded.metadata.length,16);assert.ok(decoded.count>0);assert.ok(decoded.layers.length>1,'MVT must decode multiple original regional layer IDs');
+    assert.ok(!decoded.layers.includes('kict_sewer_seoul'));
+    note('outside-Seoul MVT decodes original regional layers and excludes Seoul');
     await page.locator('#sewerCase2').uncheck();
     for(const area of [{name:'busan',center:[129.0756,35.1796],layer:'sewer_busan'},{name:'gyeonggi',center:[127.0286,37.2636],layer:'sewer_gyeonggi_south'}]) {
       await page.evaluate(({center,layer})=>{
@@ -184,7 +184,7 @@ const output = process.env.PIPE_TEST_OUT;
     assert.equal(await page.locator('#rasterLegend').isVisible(),false);
     await page.unroute(badTiff);await page.locator('#reload').click();await ready('kict_sewer_national_21');
     note('regional metadata and TIFF failures clear old map/results and recover on retry');
-    await page.route('**/tiles/kict_sewer_national/meta.json',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({minzoom:6,maxzoom:17,complete:false,count:409087,expected_count:4063444,missing_regions:['sewer_jeju'],vector_layer_ids:['kict_sewer_seoul']})}));
+    await page.route('**/tiles/kict_sewer_national/meta.json',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({minzoom:6,maxzoom:17,complete:false,count:243135,expected_count:3634657,missing_regions:['sewer_jeju'],vector_layer_ids:['sewer_gangwon']})}));
     await page.reload({waitUntil:'domcontentloaded'});await ready('kict_water_national_39');
     await page.waitForFunction(()=>document.querySelector('#vector-kict_sewer_national').closest('label').classList.contains('unavailable'));
     assert.equal(await page.locator('#vector-kict_sewer_national').isDisabled(),true);

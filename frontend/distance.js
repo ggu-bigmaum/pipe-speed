@@ -6,30 +6,52 @@
   const core = window.PipeDistanceCore;
   const prefix = cfg.API_BASE ? cfg.API_BASE.replace(/\/$/, '') + '/distance/' : new URL('../distance/', location.href).href;
   const datasets = [
-    {id: 'kict_water_seoul', label: '건기연 상수(서울)', route: '', inputs: {case1: 'case1', case2: 'case2'}},
-    {id: 'kict_sewer_seoul', label: '건기연 하수(서울·보정본)', route: 'kict_sewer_seoul/', inputs: {case1: 'sewerCase1', case2: 'sewerCase2'}}
+    {id: 'kict_water_seoul', label: '건기연 상수(기존 서울)', route: '', inputs: {case1: 'case1', case2: 'case2'}},
+    {id: 'kict_sewer_seoul', label: '건기연 하수(서울·보정본)', route: 'kict_sewer_seoul/', inputs: {case1: 'sewerCase1', case2: 'sewerCase2'}},
+    {id: 'seoul_water', label: '서울시 상수', route: 'seoul_water/', statusStem: 'seoulWater', available: false, inputs: {case1: 'seoulWaterCase1', case2: 'seoulWaterCase2'}},
+    {id: 'seoul_sewer', label: '서울시 하수', route: 'seoul_sewer/', statusStem: 'seoulSewer', available: false, inputs: {case1: 'seoulSewerCase1', case2: 'seoulSewerCase2'}}
   ];
-  const requestedDataset = new URLSearchParams(location.search).get('dataset');
+  const municipalDatasets = datasets.filter(dataset => dataset.statusStem);
+  const requestedDatasetId = new URLSearchParams(location.search).get('dataset');
+  const requestedDataset = requestedDatasetId === 'kict_water_seoul' ? 'kict_water_national_11' : requestedDatasetId === 'kict_sewer_national_11' ? 'kict_sewer_seoul' : requestedDatasetId;
   const nationalGroups = ['water', 'sewer'].map(utility => {
     const stem = utility === 'water' ? 'nationalWater' : 'nationalSewer';
     return {utility, stem, regions: [], inputs: {case1: stem + 'Case1', case2: stem + 'Case2'}};
   });
   let selectedDataset = datasets.find(d => d.id === requestedDataset) || datasets[0];
   let datasetRevision = 0;
+  let rasterRequest = 0, rasterTask = Promise.resolve();
   let rasterEntries = [], currentSources = [];
   const datasetApi = (dataset, path) => prefix + dataset.route + path;
   const metadataExtent = m => [m.origin[0], m.origin[1] - m.height * m.pixel_size[1], m.origin[0] + m.width * m.pixel_size[0], m.origin[1]];
   async function mapLimited(items, callback, signal) {
-    const results = new Array(items.length); let cursor = 0, failure;
+    const results = new Array(items.length); let cursor = 0, failed = false;
     await Promise.all(Array.from({length: Math.min(4, items.length)}, async () => {
-      while (cursor < items.length && !failure && !signal.aborted) {
+      while (cursor < items.length && !failed && !signal.aborted) {
         const index = cursor++;
-        try { results[index] = await callback(items[index], index); } catch (error) { failure ||= error; }
+        try { results[index] = await callback(items[index], index); } catch (error) { failed = true; throw error; }
       }
     }));
     if (signal.aborted) throw new DOMException('중단', 'AbortError');
-    if (failure) throw failure;
     return results;
+  }
+  // Abort also releases non-fetch work such as GeoTIFF.getView(). Its late
+  // result must never attach a cancelled source to the next selected layer.
+  function loadingStep(operation, controller, label) {
+    return new Promise((resolve, reject) => {
+      const signal = controller.signal;
+      let done = false;
+      const finish = (error, value) => {
+        if (done) return; done = true;
+        clearTimeout(timer); signal.removeEventListener('abort', aborted);
+        error ? reject(error) : resolve(value);
+      };
+      const aborted = () => finish(signal.reason || new DOMException('중단', 'AbortError'));
+      const timer = setTimeout(() => controller.abort(new Error(`${label} · 30초 동안 완료되지 않았습니다. 다시 선택해 주세요.`)), 30000);
+      signal.addEventListener('abort', aborted, {once: true});
+      if (signal.aborted) aborted();
+      else Promise.resolve().then(operation).then(value => finish(null, value), error => finish(error));
+    });
   }
   const rasterInputs = () => [...document.querySelectorAll('input[data-raster]')].map(input => input.id);
   const rasterChecked = () => rasterInputs().some(id => $(id).checked);
@@ -37,7 +59,7 @@
     rasterInputs().forEach(input => { $(input).checked = input === selectedDataset.inputs[id]; });
   }
   const defaults = {breaks: [10, 50, 100, 500], colors: ['#08306b', '#2171b5', '#4292c6', '#9ecae1', '#f7fbff']};
-  let style = structuredClone(defaults), meta, map, view, selection, currentLayer, currentSource, vectorMap, vectorCatalog, gridLayer;
+  let style = structuredClone(defaults), meta, map, view, selection, currentLayer, currentSource, vectorMap, vectorCatalog, gridLayer, pipePicker;
   let selectedCase = 'case1', busy = false, running = false, stopped = false, active, clickController, clickSeq = 0;
   let records = [], sourceRevision = 0, suppressMove = false, ready = false;
   let moveController, gridController, gridTimer, gridRevision = 0, gridDatasetId;
@@ -63,7 +85,7 @@
       }
     };
   }
-  function closeDetails() { ++clickSeq; clickController?.abort(); selection?.clear(); $('cellDetails').hidden = true; $('detailPanel').hidden = true; }
+  function closeDetails() { ++clickSeq; clickController?.abort(); selection?.clear(); pipePicker?.clear(); $('cellDetails').hidden = true; $('detailPanel').hidden = true; }
   $('closeDetails').onclick = closeDetails;
   $('editStyle').onclick = () => $('styleDialog').showModal();
   $('closeStyle').onclick = () => $('styleDialog').close();
@@ -91,13 +113,16 @@
     return data;
   }
   function controls() {
-    for (const id of [...rasterInputs(), 'reload', 'run', 'fit']) $(id).disabled = !ready || busy || running;
+    for (const id of rasterInputs()) $(id).disabled = !ready || running;
+    for (const dataset of municipalDatasets) for (const input of Object.values(dataset.inputs)) $(input).disabled ||= !dataset.available;
+    for (const id of ['reload', 'run', 'fit']) $(id).disabled = !ready || busy || running;
     for (const group of nationalGroups) {
       const available = group.regions.some(region => region.available);
-      $(group.stem + 'Region').disabled = !ready || busy || running || !available;
+      $(group.stem + 'Region').disabled = !ready || running || !available;
       for (const input of Object.values(group.inputs)) $(input).disabled ||= !available;
     }
     $('stop').disabled = !busy && !running;
+    $('stop').hidden = !busy && !running;
     $('repeat').disabled = busy || running;
     $('applyStyle').disabled = busy || running;
     $('resetStyle').disabled = busy || running;
@@ -207,30 +232,46 @@
     let started, downloadDone, byteCount, success = false;
     try {
       removeRaster(); await frame(); started = performance.now();
+      let downloaded = 0, decoded = 0;
+      const progress = (phase, count) => { if (!controller.signal.aborted) status(`${caseName(id)} · ${phase} ${count}/${rasterEntries.length}`); };
+      progress('다운로드', 0);
       const downloads = await mapLimited(rasterEntries, async entry => {
         const file = entry.meta.cases.find(c => c.id === id);
-        const response = await fetch(datasetApi(entry.dataset, 'files/' + file.filename + '?fresh=' + Date.now()), {cache: 'no-store', signal: controller.signal});
-        if (!response.ok) throw new Error(`${entry.dataset.label} 원본 파일을 받지 못했습니다 (${response.status}).`);
-        return {entry, data: await response.arrayBuffer()};
+        const data = await loadingStep(async () => {
+          const response = await fetch(datasetApi(entry.dataset, 'files/' + file.filename + '?fresh=' + Date.now()), {cache: 'no-store', signal: controller.signal});
+          if (!response.ok) throw new Error(`${entry.dataset.label} 원본 파일을 받지 못했습니다 (${response.status}).`);
+          return response.arrayBuffer();
+        }, controller, `${entry.dataset.label} 다운로드`);
+        progress('다운로드', ++downloaded);
+        return {entry, data};
       }, controller.signal);
       downloadDone = performance.now(); byteCount = downloads.reduce((sum, item) => sum + item.data.byteLength, 0);
+      metrics(downloadDone - started, null, null); progress('파일 해석', 0);
       const sources = await mapLimited(downloads, async ({entry, data}) => {
         const source = new ol.source.GeoTIFF({sources: [{blob: new Blob([data]), nodata: entry.meta.nodata}], normalize: false, interpolate: false, transition: 0, wrapX: false});
         source.set('dataset_id', entry.dataset.id);
         currentSources.push(source);
-        const sourceView = await source.getView();
+        const sourceView = await loadingStep(() => source.getView(), controller, `${entry.dataset.label} 파일 해석`);
+        controller.signal.throwIfAborted();
         if (sourceView.projection.getCode() !== entry.meta.crs) throw new Error('TIF와 result의 좌표계가 다릅니다.');
         source.setTileGridForProjection(view.getProjection(), ol.tilegrid.createXYZ({maxZoom: view.getMaxZoom()}));
+        progress('파일 해석', ++decoded);
         return {source, extent: ol.proj.transformExtent(metadataExtent(entry.meta), entry.meta.crs, view.getProjection(), 24)};
       }, controller.signal);
       currentSources = sources.map(item => item.source); currentSource = currentSources[0];
       // Reproject at the display zoom. The default grid stops near the 100 m
       // source resolution; enlarging those coarse Mercator pixels moves the
       // apparent cell boundaries away from the original UTM grid.
-      currentLayer = new ol.layer.WebGLTile({source: currentSource,
+      // All regional sources share this texture cache. At wide viewports the
+      // default 512 entries cannot hold even one frame (17 * 60 tiles), so tiles
+      // are evicted before rendercomplete can fire. Reserve two view levels.
+      const size = map.getSize(), width = Math.max(size[0], screen.width), height = Math.max(size[1], screen.height);
+      const cacheSize = Math.max(512, 2 * sources.length * (Math.ceil(width / 256) + 2) * (Math.ceil(height / 256) + 2));
+      currentLayer = new ol.layer.WebGLTile({source: currentSource, cacheSize,
         ...(sources.length > 1 ? {sources: extent => sources.filter(item => ol.extent.intersects(extent, item.extent)).map(item => item.source)} : {}),
         style: rasterStyle(), opacity: Number($('opacity').value) / 100});
       map.getLayers().insertAt(0, currentLayer);
+      status(`${caseName(id)} · 지도에 그리는 중…`);
       await afterRender(controller.signal); visibleDocument();
       const ended = performance.now(), download = downloadDone - started, display = ended - downloadDone;
       metrics(download, display, ended - started);
@@ -238,14 +279,17 @@
       addRecord({type: '원본 읽기', download_ms: download, display_ms: display, total_ms: ended - started, bytes: byteCount, status: '완료'});
       status(`${caseName(id)} 표시 완료 · 격자를 클릭해 보세요.`); success = true;
     } catch (error) {
+      const cancelled = controller.signal.aborted && controller.signal.reason?.name === 'AbortError';
+      controller.abort();
       removeRaster(); metrics(null, null, null);
-      const message = controller.signal.aborted ? '측정을 중단했습니다.' : error.message;
-      status(message, !controller.signal.aborted); $('measurementInfo').textContent = message;
+      const message = cancelled ? '불러오기를 중단했습니다.' : error.message;
+      if (cancelled) rasterInputs().forEach(input => { $(input).checked = false; });
+      status(message, !cancelled); $('measurementInfo').textContent = message;
       addRecord({type: '원본 읽기', download_ms: downloadDone && started ? downloadDone - started : null, display_ms: null, total_ms: null, bytes: byteCount ?? null, status: message});
     } finally { busy = false; active = null; syncLegend(); controls(); if (success) scheduleGrid(); }
     return success;
   }
-  function stop() { stopped = true; active?.abort(); $('runState').textContent = '중단 요청'; }
+  function stop() { ++rasterRequest; stopped = true; active?.abort(); $('runState').textContent = '중단 요청'; }
   $('stop').onclick = stop;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { moveController?.abort(); if (busy || running) stop(); }
@@ -331,7 +375,8 @@
     let loaded = false;
     try {
       const entries = await mapLimited(dataset.members || [dataset], async member => {
-        const m = await json(datasetApi(member, 'meta'), {cache: 'no-store', signal: controller.signal});
+        const m = await loadingStep(() => json(datasetApi(member, 'meta'), {cache: 'no-store', signal: controller.signal}), controller, `${member.label} 자료 확인`);
+        controller.signal.throwIfAborted();
         if (m.dataset_id !== member.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
         return {dataset: member, meta: m};
       }, controller.signal);
@@ -348,16 +393,36 @@
       fit();
       loaded = true;
     } catch (error) {
+      const cancelled = controller.signal.aborted && controller.signal.reason?.name === 'AbortError';
+      controller.abort();
       meta = null; rasterEntries = [];
       $(dataset.inputs[id]).checked = false; syncLegend();
-      status(controller.signal.aborted ? '자료 전환을 중단했습니다.' : error.message, !controller.signal.aborted);
+      if (dataset.statusStem && !cancelled) municipalState(dataset, false, 'invalid', error.message);
+      status(cancelled ? '자료 전환을 중단했습니다.' : error.message, !cancelled);
     }
     finally { busy = false; active = null; controls(); }
     if (loaded) await loadCase(id);
   }
+  function requestRaster(dataset, id) {
+    const request = ++rasterRequest;
+    active?.abort();
+    // Wait for cancelled work to dispose its sources before starting the latest
+    // request. Rapid clicks replace pending selections rather than racing them.
+    rasterTask = rasterTask.catch(() => {}).then(async () => {
+      if (request !== rasterRequest) return;
+      if (id) await switchDataset(dataset, id);
+      else {
+        removeRaster(); cancelGrid(true); closeDetails();
+        rasterInputs().forEach(input => { $(input).checked = false; });
+        metrics(null, null, null); $('moveMs').textContent = '—';
+        status('TIF 표시를 껐습니다.'); syncLegend(); controls();
+      }
+    }).catch(error => status(error.message, true));
+    return rasterTask;
+  }
   function rasterChange(dataset, id, input) {
-    if ($(input).checked) { if (dataset && dataset.available !== false) switchDataset(dataset, id); }
-    else { moveController?.abort(); cancelGrid(); currentLayer?.setVisible(false); closeDetails(); metrics(null, null, null); $('moveMs').textContent = '—'; status('TIF 표시를 껐습니다.'); syncLegend(); controls(); }
+    if ($(input).checked) { if (dataset && dataset.available !== false) requestRaster(dataset, id); }
+    else requestRaster(null, null);
   }
   for (const dataset of datasets) for (const [id, input] of Object.entries(dataset.inputs)) $(input).onchange = () => rasterChange(dataset, id, input);
   for (const group of nationalGroups) {
@@ -365,8 +430,24 @@
     for (const [id, input] of Object.entries(group.inputs)) $(input).onchange = () => rasterChange(region(), id, input);
     $(group.stem + 'Region').onchange = () => {
       const dataset = region();
-      if (dataset?.available) switchDataset(dataset, selectedDataset.utility === group.utility ? selectedCase : 'case1');
+      if (dataset?.available) requestRaster(dataset, selectedDataset.utility === group.utility ? selectedCase : 'case1');
     };
+  }
+  function municipalState(dataset, available, state, reason = '') {
+    dataset.available = available; dataset.reason = reason;
+    $(dataset.statusStem + 'State').textContent = available ? '' : state === 'waiting' ? '자료 대기' : '확인 필요';
+    $(dataset.statusStem + 'Note').textContent = available || state === 'waiting' ? '' : reason;
+  }
+  async function loadMunicipalAvailability() {
+    await Promise.all(municipalDatasets.map(async dataset => {
+      try {
+        const data = await json(datasetApi(dataset, 'availability'), {cache: 'no-store', signal: AbortSignal.timeout(15000)});
+        if (data.dataset_id !== dataset.id) throw new Error('선택한 자료와 서버의 자료 구분이 다릅니다.');
+        municipalState(dataset, data.available === true && data.status === 'ready', data.status, data.reason || '자료 확인이 필요합니다.');
+      } catch (error) {
+        municipalState(dataset, false, 'invalid', '자료 확인 필요 · ' + error.message);
+      } finally { controls(); }
+    }));
   }
   async function loadNationalCatalog() {
     try {
@@ -375,11 +456,11 @@
         const data = catalog.groups.find(item => item.id === group.utility);
         if (!data?.regions) throw new Error('전국 지역 목록을 확인해 주세요.');
         const select = $(group.stem + 'Region'); select.replaceChildren();
-        group.regions = data.regions.map(region => ({...region, regionLabel: region.label, id: region.dataset_id, utility: group.utility, inputs: group.inputs,
-          label: `건기연 ${group.utility === 'water' ? '상수' : '하수'}(전국${group.utility === 'sewer' ? '·보정본' : ''}) · ${region.label}`}));
+        group.regions = data.regions.filter(region => group.utility !== 'sewer' || region.code !== '11').map(region => ({...region, regionLabel: region.label, id: region.dataset_id, utility: group.utility, inputs: group.inputs,
+          label: `건기연 ${group.utility === 'water' ? '상수' : '하수'} · ${region.label}${group.utility === 'sewer' ? (region.code === '11' ? '·보정' : '·원본') : ''}`}));
         const members = group.regions.filter(region => region.available);
-        group.regions.unshift({code: 'all', id: `kict_${group.utility}_national_all`, regionLabel: '전국',
-          label: `건기연 ${group.utility === 'water' ? '상수' : '하수'}(전국${group.utility === 'sewer' ? '·보정본' : ''})`,
+        group.regions.unshift({code: 'all', id: `kict_${group.utility}_national_all`, regionLabel: group.utility === 'water' ? '전국' : '전체(서울 외)',
+          label: `건기연 ${group.utility === 'water' ? '상수(전국)' : '하수(서울 외·원본)'}`,
           utility: group.utility, inputs: group.inputs, available: members.length > 0, members});
         for (const region of group.regions) {
           const option = document.createElement('option'); option.value = region.code; option.disabled = !region.available;
@@ -388,8 +469,8 @@
         }
         const first = group.regions.find(region => region.available); if (first) select.value = first.code;
         const missing = group.regions.filter(region => !region.available);
-        $(group.stem + 'Note').textContent = group.utility === 'water' ? '전국 산출본 · 기존 서울 기준 자료와 별도' : '서울 포함 · 전남 자료 없음';
-        if (missing.some(region => !(group.utility === 'sewer' && region.code === '36'))) $(group.stem + 'Note').textContent += ' · 일부 지역 설치 확인 필요';
+        $(group.stem + 'Note').textContent = group.utility === 'water' ? '' : '원본 · 전남 제외';
+        if (missing.some(region => !(group.utility === 'sewer' && region.code === '36'))) $(group.stem + 'Note').textContent = [$(group.stem + 'Note').textContent, '일부 지역 자료 확인 필요'].filter(Boolean).join(' · ');
       }
       return true;
     } catch (_) {
@@ -397,7 +478,7 @@
       return false;
     } finally { controls(); }
   }
-  $('reload').onclick = () => loadCase(selectedCase);
+  $('reload').onclick = () => requestRaster(selectedDataset, selectedCase);
   $('run').onclick = async () => {
     const count = Number($('repeat').value);
     if (!Number.isInteger(count) || count < 1 || count > 20) { $('runState').textContent = '반복 횟수는 1~20회입니다.'; return; }
@@ -415,10 +496,9 @@
   };
   function fit() {
     moveController?.abort();
-    if (!meta) { view.setCenter(ol.proj.fromLonLat([126.98, 37.56])); view.setZoom(11); return; }
     suppressMove = true;
-    const [x, y] = meta.origin, [sx, sy] = meta.pixel_size;
-    const extent = ol.proj.transformExtent([x, y - meta.height * sy, x + meta.width * sx, y], meta.crs, 'EPSG:3857', 16);
+    const extent = meta ? ol.proj.transformExtent(metadataExtent(meta), meta.crs, 'EPSG:3857', 16)
+      : ol.proj.transformExtent([124.5, 32.8, 132, 38.8], 'EPSG:4326', 'EPSG:3857');
     const right = narrow.matches ? 24 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) + 50;
     view.fit(extent, {padding: [70, right, 60, 35], duration: 0});
     setTimeout(() => { suppressMove = false; }, 200);
@@ -426,6 +506,8 @@
   $('fit').onclick = fit;
   async function pick(coordinate) {
     if (!currentLayer?.getVisible()) return;
+    $('detailPanel').dataset.mode = 'grid'; $('gridDetailsExtra').hidden = false; $('pipeDetails').hidden = true;
+    $('closeDetails').setAttribute('aria-label', '격자 정보 닫기');
     $('detailTitle').textContent = `${selectedDataset.label} · 선택 격자`;
     $('detailPanel').hidden = false;
     const sequence = ++clickSeq; clickController?.abort(); clickController = new AbortController();
@@ -529,8 +611,12 @@
       style: new ol.style.Style({stroke: new ol.style.Stroke({color: 'rgba(35,63,84,.42)', width: .6})})});
     vectorMap.addLayer(gridLayer);
     const tilesBase = cfg.API_BASE ? cfg.API_BASE.replace(/\/$/, '') + '/tiles/' : new URL('../tiles/', location.href).href;
-    vectorCatalog = window.PipeVectorCatalog.create({map: vectorMap, view, config: cfg, tilesBase, onChange: syncLegend, onSelect: () => measureTab('vector'), onRecord: addRecord});
-    map.on('singleclick', event => pick(event.coordinate));
+    vectorCatalog = window.PipeVectorCatalog.create({map: vectorMap, view, config: cfg, tilesBase, onChange: () => { syncLegend(); pipePicker?.syncVisibility(); }, onSelect: () => measureTab('vector'), onRecord: addRecord});
+    pipePicker = window.PipeVectorSelection.create({map: vectorMap, getEntries: () => vectorCatalog.entries, onSelect: closeDetails});
+    map.on('singleclick', event => {
+      if (pipePicker.pick(event.coordinate)) return;
+      closeDetails(); pick(event.coordinate);
+    });
     const measureMove = async () => {
       moveController?.abort();
       if (!ready || busy || running || suppressMove || !currentLayer?.getVisible() || document.hidden) return;
@@ -548,10 +634,10 @@
     const invalidateViewportGrid = () => { if (meta?.grid_mode === 'viewport') cancelGrid(true); };
     view.on('change:center', invalidateViewportGrid); view.on('change:resolution', invalidateViewportGrid);
     map.on('moveend', scheduleGrid);
-    ready = true; controls();
     // Read-only diagnostics for browser regression tests.
-    window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getSources: () => currentSources.slice(), getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice()};
+    window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getSources: () => currentSources.slice(), getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice(), getPipeSelection: () => pipePicker.getSelection()};
     const catalogReady = loadNationalCatalog();
+    const municipalReady = loadMunicipalAvailability();
     if (requestedDataset?.startsWith('kict_water_national_') || requestedDataset?.startsWith('kict_sewer_national_')) {
       await catalogReady;
       const dataset = datasets.find(item => item.id === requestedDataset);
@@ -559,10 +645,20 @@
         rasterInputs().forEach(input => { $(input).checked = false; }); syncLegend();
         throw new Error(dataset ? `${dataset.label} · ${dataset.reason || '자료 없음'}` : '요청한 전국 지역 자료를 확인하지 못했습니다.');
       }
-      await switchDataset(dataset, 'case1');
+      ready = true; controls(); await requestRaster(dataset, 'case1');
     } else {
-      if (!requestedDataset) { await catalogReady; selectedDataset = datasets.find(item => item.id === 'kict_water_national_all' && item.available) || selectedDataset; }
-      await switchDataset(selectedDataset, 'case1');
+      if (!requestedDataset) {
+        await catalogReady;
+        selectedDataset = datasets.find(item => item.id === 'kict_water_national_all' && item.available) || selectedDataset;
+        rasterInputs().forEach(input => { $(input).checked = false; });
+        fit(); ready = true; syncLegend(); controls(); status('왼쪽에서 표시할 레이어를 선택하세요.');
+      } else {
+        if (selectedDataset.statusStem) await municipalReady;
+        ready = true; controls();
+        if (selectedDataset.available === false) {
+          syncLegend(); status(`${selectedDataset.label} · ${selectedDataset.reason}`);
+        } else await requestRaster(selectedDataset, 'case1');
+      }
     }
   } catch (error) { status(error.message, true); $('pickMessage').textContent = '자료 연결이 완료되지 않았습니다.'; }
 })();

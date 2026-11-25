@@ -7,29 +7,43 @@
 </head>
 <body>
 <aside id="layerSidebar" aria-label="레이어 선택">
-  <div class="brand"><span class="brand-icon" aria-hidden="true">▱</span><div><h1>관망 지도</h1><p>PIPE · 레이어 선택</p></div><button id="closeLayers" class="icon mobile-only" aria-label="레이어 목록 닫기">×</button></div>
-  <div class="catalog-heading"><h2>레이어</h2><span id="layerCount" class="count">5</span></div>
-  <details class="layer-group" open><summary><span>벡터타일</span><span id="vectorCount" class="count">1</span></summary><div id="vectorList"></div></details>
-  <details class="layer-group national-group" id="nationalWaterGroup" open><summary><span>TIF · 건기연 상수(전국)</span><span class="count">2</span></summary>
+  <div class="brand"><span class="brand-icon" aria-hidden="true">▱</span><div><h1>관망 지도</h1></div><button id="closeLayers" class="icon mobile-only" aria-label="레이어 목록 닫기">×</button></div>
+  <div class="catalog-heading"><h2>레이어</h2><span id="layerCount" class="count">5종</span></div>
+  <details class="layer-group" open><summary><span>관로</span><span id="vectorCount" class="count">1</span></summary><div id="vectorList"></div></details>
+  <details class="layer-group national-group" id="nationalWaterGroup"><summary><span>거리 · 건기연 상수</span></summary>
     <label class="region-picker" for="nationalWaterRegion">지역<select id="nationalWaterRegion" disabled><option>자료 확인 중…</option></select></label>
-    <p id="nationalWaterNote" class="group-caption" role="status">서울 포함 17개 시도 · 전국 산출본</p>
-    <label class="layer-row"><input id="nationalWaterCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
-    <label class="layer-row"><input id="nationalWaterCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+    <p id="nationalWaterNote" class="group-caption" role="status"></p>
+    <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="nationalWaterCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
+    <label class="layer-row raster-row" title="관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="nationalWaterCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
+    <details class="layer-group legacy-subgroup" id="legacyWaterGroup" hidden title="건기연 상수 · 기존 서울 기준 산출본 (전국 산출본과 별도)"><summary><span>기존 서울</span></summary>
+      <label class="layer-row raster-row" title="기존 서울 상수 · 격자 중심에서 최근접 관로까지의 거리"><input id="case1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
+      <label class="layer-row raster-row" title="기존 서울 상수 · 관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="case2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
+    </details>
   </details>
-  <details class="layer-group national-group" id="nationalSewerGroup" open><summary><span>TIF · 건기연 하수(전국·보정본)</span><span class="count">2</span></summary>
+  <details class="layer-group" id="legacySewerGroup" title="건기연 하수 · 서울지역 보정본"><summary><span>거리 · 건기연 하수</span><span class="scope-badge">서울·보정</span></summary>
+    <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="sewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
+    <label class="layer-row raster-row" title="관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="sewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
+  </details>
+  <details class="layer-group national-group" id="nationalSewerGroup"><summary><span>거리 · 건기연 하수</span><span class="scope-badge">서울 외</span></summary>
     <label class="region-picker" for="nationalSewerRegion">지역<select id="nationalSewerRegion" disabled><option>자료 확인 중…</option></select></label>
-    <p id="nationalSewerNote" class="group-caption" role="status">서울 포함 · 전남 자료 없음</p>
-    <label class="layer-row"><input id="nationalSewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
-    <label class="layer-row"><input id="nationalSewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+    <p id="nationalSewerNote" class="group-caption" role="status">원본 · 전남 제외</p>
+    <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="nationalSewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
+    <label class="layer-row raster-row" title="관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="nationalSewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
   </details>
-  <details class="layer-group" id="legacyWaterGroup"><summary><span>TIF · 건기연 상수(기존 서울)</span><span class="count">2</span></summary>
-    <p class="group-caption">기존 서울 기준 자료 · 전국 산출본과 별도</p>
-    <label class="layer-row"><input id="case1" data-raster type="checkbox" checked disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
-    <label class="layer-row"><input id="case2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+  <details class="layer-group municipal-group" id="seoulWaterGroup"><summary><span>거리 · 서울시 상수</span><span id="seoulWaterState" class="scope-badge">확인 중</span></summary>
+    <p id="seoulWaterNote" class="group-caption" role="status"></p>
+    <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="seoulWaterCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
+    <label class="layer-row raster-row" title="관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="seoulWaterCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
   </details>
-  <details class="layer-group" id="legacySewerGroup"><summary><span>TIF · 건기연 하수(기존 서울·보정본)</span><span class="count">2</span></summary>
-    <label class="layer-row"><input id="sewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
-    <label class="layer-row"><input id="sewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+  <details class="layer-group municipal-group" id="seoulSewerGroup"><summary><span>거리 · 서울시 하수</span><span id="seoulSewerState" class="scope-badge">확인 중</span></summary>
+    <p id="seoulSewerNote" class="group-caption" role="status"></p>
+    <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="seoulSewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
+    <label class="layer-row raster-row" title="관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="seoulSewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
+  </details>
+  <details class="layer-group reference-group" id="referenceSewerGroup">
+    <summary><span>서울 외 전처리·보정 자료</span><span class="scope-badge">참고용</span></summary>
+    <p class="group-caption">원본 관로와 추가 연결을 함께 확인</p>
+    <div id="referenceVectorList"></div>
   </details>
 </aside>
 <main id="mapArea" aria-label="관망 지도">
@@ -39,7 +53,12 @@
     <div class="card-heading"><h2 id="detailTitle">선택한 격자</h2><button id="closeDetails" class="icon" aria-label="격자 정보 닫기">×</button></div>
     <div class="card-body"><p id="pickMessage" aria-live="polite">지도에서 격자를 클릭하세요.</p>
       <dl id="cellDetails" hidden><dt>격자 ID</dt><dd id="gridId"></dd><dt>Case 1 거리</dt><dd id="value1"></dd><dt>Case 2 거리</dt><dd id="value2"></dd><dt>관로 통과</dt><dd id="passFlag"></dd><dt>최근접 관로 ID</dt><dd id="pipeId" class="mono"></dd><dt>최근접점 X / Y</dt><dd id="nearXY" class="mono"></dd><dt>최근접점 경위도</dt><dd id="nearLonLat" class="mono"></dd></dl>
-      <p class="hint">파랑: 격자 중심 · 빨강: 최근접점<br>점선: Case 1 거리 조회선 · X/Y: EPSG:32652</p><a id="downloadResult" href="#" class="text-link">result 원본 내려받기 ↗</a>
+      <div id="gridDetailsExtra"><p class="hint">파랑: 격자 중심 · 빨강: 최근접점<br>점선: Case 1 거리 조회선 · X/Y: EPSG:32652</p><a id="downloadResult" href="#" class="text-link">result 원본 내려받기 ↗</a></div>
+      <div id="pipeDetails" hidden>
+        <label id="pipeCandidatePicker" for="pipeCandidates" hidden>겹친 관로 선택<select id="pipeCandidates"></select></label>
+        <dl id="pipeAttributes"></dl>
+        <p class="hint">빨간 선: 선택한 관로 구간<br>현재 지도에 포함된 속성을 표시합니다.</p>
+      </div>
     </div>
   </section>
   <div class="right-dock">
@@ -50,9 +69,9 @@
         <div id="rasterSpeedPane" role="tabpanel" aria-labelledby="rasterTab">
           <div class="target-row"><span>측정 대상</span><strong id="measureCase">거리 Case 1</strong></div>
           <div class="metrics"><div class="total"><span>다운로드부터 표시까지</span><strong id="totalMs">—</strong></div><div><span>다운로드</span><strong id="downloadMs">—</strong></div><div><span>해석·표시</span><strong id="renderMs">—</strong></div></div>
-          <button id="reload" class="primary wide" disabled>원본 다시 읽고 측정</button>
+          <button id="reload" class="primary wide" disabled>원본 다시 읽고 측정</button><button id="stop" class="wide" disabled hidden>불러오기 중단</button>
           <div class="move-metric"><span>확대·이동 재표시</span><strong id="moveMs">—</strong></div>
-          <details class="advanced"><summary>반복 측정·측정 기준</summary><div class="row"><label>반복 <input id="repeat" type="number" min="1" max="20" value="3"> 회</label><button id="run" disabled>두 방식 반복</button><button id="stop" disabled>중단</button></div><p id="runState" role="status"></p><p class="hint">원본: HTTP 캐시 우회 · 배경·벡터·result 조회 완료 대기 제외<br>재표시: 마지막 위치·배율 변경부터 표시까지</p><p id="measurementInfo" class="hint">아직 측정하지 않았습니다.</p></details>
+          <details class="advanced"><summary>반복 측정·측정 기준</summary><div class="row"><label>반복 <input id="repeat" type="number" min="1" max="20" value="3"> 회</label><button id="run" disabled>두 방식 반복</button></div><p id="runState" role="status"></p><p class="hint">원본: HTTP 캐시 우회 · 배경·벡터·result 조회 완료 대기 제외<br>재표시: 마지막 위치·배율 변경부터 표시까지</p><p id="measurementInfo" class="hint">아직 측정하지 않았습니다.</p></details>
         </div>
         <div id="vectorSpeedPane" role="tabpanel" aria-labelledby="vectorTab" hidden>
           <p id="vectorTarget" class="target-row">왼쪽에서 벡터타일을 선택하세요.</p><div class="vector-metric"><span>현재 화면 표시 시간</span><strong id="vectorMs">—</strong></div><p id="vectorState" class="hint" role="status"></p><button id="reloadVector" class="primary wide" disabled>벡터타일 다시 읽고 측정</button><p class="hint">선택한 벡터타일의 수신·해석·표시 시간입니다.<br>지도 이동과 레이어 선택 시 자동 측정합니다.</p><a href="benchmark.html" class="text-link" target="_blank" rel="noopener">기존 전국 시나리오 측정 ↗</a>
@@ -69,5 +88,5 @@
 </main>
 <dialog id="styleDialog" aria-labelledby="styleTitle"><div class="card-heading"><div><h2 id="styleTitle">거리 범례 설정</h2><p class="hint">단위 m · 경계값은 작은 순서로 입력</p></div><button id="closeStyle" class="icon" aria-label="범례 설정 닫기">×</button></div><div id="bins"></div><p id="styleError" class="error" role="alert"></p><div class="row"><button id="resetStyle">초기값</button><button id="applyStyle" class="primary">적용</button></div></dialog>
 <dialog id="recordsDialog" aria-labelledby="recordsTitle"><div class="dialog-head"><div><h2 id="recordsTitle">속도 측정 기록</h2><p class="hint">TIF 원본 읽기·메모리 재표시·벡터타일은 서로 다른 측정입니다. 단위 ms.</p></div><button id="closeRecords">닫기</button></div><div class="table-wrap"><table><thead><tr><th>유형</th><th>대상</th><th>다운로드</th><th>해석·표시</th><th>합계</th><th>파일 KB</th><th>줌</th><th>상태</th></tr></thead><tbody id="recordsBody"></tbody></table></div><div class="row"><span id="summary"></span><button id="clearRecords">기록 지우기</button></div></dialog>
-<script src="config.js"></script><script src="vendor/geotiff-3.0.4.js"></script><script src="vendor/ol-10.11.0.js"></script><script src="distance-core.js"></script><script src="distance-vectors.js"></script><script src="distance.js"></script>
+<script src="config.js"></script><script src="vendor/geotiff-3.0.4.js"></script><script src="vendor/ol-10.11.0.js"></script><script src="distance-core.js"></script><script src="distance-vectors.js"></script><script src="pipe-selection.js"></script><script src="distance.js"></script>
 </body></html>

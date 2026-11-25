@@ -16,17 +16,17 @@ import zlib
 from flask import Blueprint, Response, abort, jsonify, request
 
 LAYER = 'kict_sewer_national'
-# Frozen source_manifest.json counts plus the separately preserved Seoul set.
+# Verified original SHP counts outside Seoul. Seoul corrected tiles have their own route.
+DATA_POLICY = 'original-outside-seoul-v1'
 REGIONS = (
-    ('sewer_gangwon', 244875), ('sewer_gyeonggi_south', 685960),
-    ('sewer_gyeonggi_north', 346329), ('sewer_gyeongnam', 393324),
-    ('sewer_gyeongbuk', 375542), ('sewer_gwangju', 126693),
-    ('sewer_daegu', 150603), ('sewer_daejeon', 78908),
-    ('sewer_busan', 168064), ('sewer_sejong', 21055),
-    ('sewer_ulsan', 111743), ('sewer_incheon', 141618),
-    ('sewer_jeonbuk', 250197), ('sewer_jeju', 129951),
-    ('sewer_chungnam', 259496), ('sewer_chungbuk', 169999),
-    ('kict_sewer_seoul', 409087),
+    ('sewer_gangwon', 243135), ('sewer_gyeonggi_south', 683531),
+    ('sewer_gyeonggi_north', 344491), ('sewer_gyeongnam', 391148),
+    ('sewer_gyeongbuk', 373896), ('sewer_gwangju', 123984),
+    ('sewer_daegu', 150510), ('sewer_daejeon', 78908),
+    ('sewer_busan', 168064), ('sewer_sejong', 20538),
+    ('sewer_ulsan', 111293), ('sewer_incheon', 141128),
+    ('sewer_jeonbuk', 249324), ('sewer_jeju', 129909),
+    ('sewer_chungnam', 256851), ('sewer_chungbuk', 167947),
 )
 ZOOMS = tuple(range(6, 18))
 MAX_TILE_BYTES = 256 * 1024 * 1024
@@ -34,7 +34,8 @@ MAX_TILE_BYTES = 256 * 1024 * 1024
 
 def create_national_sewer_tiles_blueprint(directory, seoul_directory, log_request=None):
     bp = Blueprint('national_sewer_tiles', __name__, url_prefix='/tiles/' + LAYER)
-    directories = {key: Path(seoul_directory) if key == 'kict_sewer_seoul' else Path(directory) / key for key, _ in REGIONS}
+    # Keep the existing factory argument for callers; this composite excludes Seoul.
+    directories = {key: Path(directory) / key for key, _ in REGIONS}
 
     def metadata():
         available, missing, bounds, fields = [], [], [], {}
@@ -42,6 +43,11 @@ def create_national_sewer_tiles_blueprint(directory, seoul_directory, log_reques
             root = directories[key]
             try:
                 info = json.loads((root / 'metadata.json').read_text(encoding='utf-8'))
+                if key != 'kict_sewer_seoul':
+                    verified = json.loads((root / 'conversion_complete.json').read_text(encoding='utf-8'))
+                    if (verified.get('status') != 'complete' or verified.get('data_policy') != DATA_POLICY
+                            or verified.get('source_features') != count or verified.get('raw_originals_verified') is not True):
+                        raise ValueError('Original-source tile verification is missing')
                 layers = json.loads(info['json'])['vector_layers']
                 if [layer['id'] for layer in layers] != [key] or any(not (root / str(z)).is_dir() for z in ZOOMS):
                     raise ValueError('Regional layer or zoom mismatch')
@@ -56,7 +62,7 @@ def create_national_sewer_tiles_blueprint(directory, seoul_directory, log_reques
                 missing.append(key)
         combined_bounds = ([min(b[0] for b in bounds), min(b[1] for b in bounds),
                             max(b[2] for b in bounds), max(b[3] for b in bounds)] if bounds else None)
-        return dict(layer=LAYER, source='전국 건기연 하수 보정본 + 기존 서울 보정본',
+        return dict(layer=LAYER, source='건기연 하수 원본(서울 외)', scope='outside-seoul', data_policy=DATA_POLICY,
                     bounds=combined_bounds, minzoom=6, maxzoom=17,
                     count=sum(count for key, count in REGIONS if key in available),
                     expected_count=sum(count for _, count in REGIONS), complete=not missing,

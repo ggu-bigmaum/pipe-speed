@@ -34,7 +34,7 @@ def json_write(path, data):
     temp.replace(path)
 
 
-def prepare(source, dest, utility, code, expected=None):
+def prepare(source, dest, utility, code, expected=None, data_policy=None):
     import numpy as np
     from PIL import Image
     started = time.monotonic()
@@ -47,6 +47,8 @@ def prepare(source, dest, utility, code, expected=None):
     oldmeta = dest/'dataset.json'
     if oldmeta.exists():
         old = json.loads(oldmeta.read_text(encoding='utf-8'))
+        if data_policy and old.get('data_policy') != data_policy:
+            raise ValueError('Existing dataset policy differs; stage a new directory: ' + str(dest))
         if all(old.get('source_files', {}).get(f, {}).get('sha256') == hashes[f] for f in FILES):
             if all((dest/f).is_file() and digest(dest/f) == hashes[f] for f in FILES) and (dest/'cells.sqlite').is_file() and digest(dest/'cells.sqlite') == old.get('provenance',{}).get('index_sha256'):
                 with sqlite3.connect((dest/'cells.sqlite').as_uri() + '?mode=ro', uri=True) as con:
@@ -128,7 +130,8 @@ def prepare(source, dest, utility, code, expected=None):
     finally:
         con.close()
     tempdb.replace(dest/'cells.sqlite')
-    kind='상수' if utility=='water' else '하수·보정본'
+    original = utility == 'sewer' and code != '11' and data_policy == 'original-outside-seoul-v1'
+    kind='상수' if utility=='water' else '하수·원본' if original else '하수·보정본'
     label=f'건기연 {kind}({REGIONS[code]})'
     source_files={name:{'bytes':(dest/name).stat().st_size,'sha256':hashes[name]} for name in FILES}
     meta={**index,'dataset_id':f'kict_{utility}_national_{code}','label':label,'result_filename':FILES[2],
@@ -139,8 +142,12 @@ def prepare(source, dest, utility, code, expected=None):
                         'all_csv_grid_raster_values_verified':True,'max_float32_rounding_m':max_error,
                         'index_sha256':digest(dest/'cells.sqlite'),
                         'pipe_id_meaning':('기존 서울 하수 보정본 관로 ID' if utility=='sewer' and code=='11' else
-                                           '전국 상수 원본 FID' if utility=='water' else '전국 하수 보정본 통합 관로 ID')},
+                                           '전국 상수 원본 FID' if utility=='water' else
+                                           '원본 관로 고유 ID; pipe_identity.csv로 원본 SHP FID·ORG_IDN 확인' if original else
+                                           '전국 하수 보정본 통합 관로 ID')},
           'verification_samples':samples}
+    if data_policy:
+        meta['data_policy'] = data_policy
     json_write(oldmeta,meta)
     print(f'READY {utility}/{code} {REGIONS[code]}: {total:,} cells, {time.monotonic()-started:.1f}s',flush=True)
     del arrays,locations

@@ -36,11 +36,12 @@ def identifier(value):
 
 
 class DistanceData:
-    def __init__(self, directory, result_filename='pipe_dist_result.xlsx'):
+    def __init__(self, directory, result_filename='pipe_dist_result.xlsx', expected_dataset_id=None):
         if result_filename not in ('pipe_dist_result.xlsx', 'pipe_dist_result.csv'):
             raise ValueError('지원하지 않는 result 파일 형식입니다.')
         self.directory = Path(directory)
         self.result_filename = result_filename
+        self.expected_dataset_id = expected_dataset_id
         self.files = (*FILES[:2], result_filename)
         self.lock = threading.Lock()
         self.signature = None
@@ -54,6 +55,10 @@ class DistanceData:
                 return self
             from PIL import Image
             index = json.loads(paths[-1].read_text(encoding='utf-8'))
+            if not isinstance(index,dict):
+                raise ValueError('grid_index.json은 격자 정보를 담은 JSON 객체여야 합니다.')
+            if self.expected_dataset_id and index.get('dataset_id') != self.expected_dataset_id:
+                raise ValueError('grid_index.json의 dataset_id가 자료 출처와 다릅니다. '+self.expected_dataset_id+'를 확인해 주세요.')
             if index['crs'] != 'EPSG:32652':
                 raise ValueError('격자 대응표의 좌표계는 EPSG:32652여야 합니다.')
             w,h = index['width'],index['height']
@@ -66,6 +71,8 @@ class DistanceData:
             arrays=[]
             for file in FILES[:2]:
                 with Image.open(self.directory/file) as im:
+                    if im.format != 'TIFF':
+                        raise ValueError(file+'은 GeoTIFF 파일이어야 합니다.')
                     keys=im.tag_v2.get(34735,())
                     epsg=next((keys[i+3] for i in range(4,len(keys),4) if keys[i]==3072),None)
                     if im.size!=(w,h) or epsg!=32652 or tuple(im.tag_v2[33550][:2])!=(sx,sy) or tuple(im.tag_v2[33922][3:5])!=(ox,oy):
@@ -144,25 +151,44 @@ class DistanceData:
 
 def create_distance_blueprint(directory, *, name='distance', url_prefix='/distance',
                               dataset_id='kict_water_seoul', label='건기연 상수(서울)',
-                              result_filename='pipe_dist_result.xlsx'):
+                              result_filename='pipe_dist_result.xlsx', require_dataset_id=False):
     bp=Blueprint(name,__name__,url_prefix=url_prefix)
-    store=DistanceData(directory,result_filename)
+    store=DistanceData(directory,result_filename,dataset_id if require_dataset_id else None)
+
+    def error_message(exc):
+        if isinstance(exc,(ValueError,KeyError,TypeError,IndexError)):
+            return str(exc)
+        return '거리 자료를 읽지 못했습니다. 입력 파일과 requirements-server.txt 설치 상태를 확인해 주세요.'
 
     @bp.errorhandler(FileNotFoundError)
     @bp.errorhandler(OSError)
     @bp.errorhandler(ValueError)
     @bp.errorhandler(KeyError)
+    @bp.errorhandler(TypeError)
+    @bp.errorhandler(IndexError)
     @bp.errorhandler(ImportError)
     def data_error(exc):
-        message='거리 자료를 읽지 못했습니다. 입력 파일과 requirements-server.txt 설치 상태를 확인해 주세요.'
-        if isinstance(exc,(ValueError,KeyError)):
-            message=str(exc)
-        return jsonify(error=message),503
+        return jsonify(error=error_message(exc)),503
 
     @bp.after_request
     def no_cache(response):
         response.headers['Cache-Control']='no-store'
         return response
+
+    @bp.get('/availability')
+    def availability():
+        identity=dict(dataset_id=dataset_id,label=label)
+        missing=[filename for filename in (*store.files,'grid_index.json')
+                 if not (store.directory/filename).is_file()]
+        if missing:
+            return jsonify(**identity,available=False,status='waiting',reason='자료 대기',missing_files=missing)
+        try:
+            # load() only validates unchanged files once per process; repeated
+            # catalog checks use file stats without re-reading TIF/CSV contents.
+            store.load()
+        except (OSError,ValueError,KeyError,TypeError,IndexError,ImportError) as exc:
+            return jsonify(**identity,available=False,status='invalid',reason=error_message(exc))
+        return jsonify(**identity,available=True,status='ready',reason='')
 
     @bp.get('/meta')
     def meta():
@@ -176,6 +202,8 @@ def create_distance_blueprint(directory, *, name='distance', url_prefix='/distan
     def original_file(filename):
         if filename not in store.files:
             abort(404)
+        if require_dataset_id:
+            store.load()
         return send_from_directory(store.directory,filename,conditional=False,max_age=0)
 
     @bp.get('/gridlines')
