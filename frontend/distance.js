@@ -664,7 +664,10 @@
         await catalogReady;
         selectedDataset = datasets.find(item => item.id === 'kict_water_national_all' && item.available) || selectedDataset;
         rasterInputs().forEach(input => { $(input).checked = false; });
-        // Keep the initial Korea view; dataset fitting is only needed after selection.
+        // Fit Korea to the usable screen, keeping the right panels off the land.
+        const initialRight = narrow.matches ? 20 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) + 40;
+        view.fit(ol.proj.transformExtent([125.5, 33.1, 129.8, 38.6], 'EPSG:4326', 'EPSG:3857'),
+          {padding: [20, initialRight, 20, 20], nearest: true, duration: 0});
         ready = true; syncLegend(); controls(); status('왼쪽에서 표시할 레이어를 선택하세요.');
       } else {
         if (selectedDataset.statusStem) await municipalReady;
