@@ -5,8 +5,7 @@
   // A single Canvas stroke for a million-feature MVT can silently draw nothing.
   // Split rendering instructions, retaining every feature and its coordinates.
   const FEATURES_PER_CANVAS_BATCH = 16384;
-  const COMPARE_MIN_ZOOM = 14;
-  const COMPARE_PAIRS = [['kict_national', 'sa001'], ['kict_sewer_seoul', 'sb001']];
+  const COMPARE_MIN_ZOOM = 12;
   const canvasBatch = Symbol('canvasBatch');
   function create({map, view, config, tilesBase, onChange, onSelect, onRecord, highlight}) {
     const entries = [];
@@ -23,18 +22,17 @@
     }
     function syncZoomGate() {
       const restricted = view.getZoom() < COMPARE_MIN_ZOOM;
-      for (const ids of COMPARE_PAIRS) {
-        const pair = ids.map(id => entries.find(e => e.id === id)).filter(Boolean);
-        const chosen = pair.filter(e => e.checkbox.checked).sort((a, b) => a.selectionOrder - b.selectionOrder);
-        if (restricted && chosen.length > 1) {
-          for (const entry of chosen.slice(1)) { entry.checkbox.checked = false; releaseEntry(entry); }
-        }
-        for (const entry of pair) {
-          if (!entry.ready) continue;
-          const blocked = restricted && !entry.checkbox.checked && pair.some(e => e !== entry && e.checkbox.checked);
-          entry.checkbox.disabled = blocked;
-          entry.note.textContent = blocked ? '확대하면 비교 가능 · 줌 14 이상' : entry.failed ? '타일 읽기 오류' : entry.readyNote;
-        }
+      // Loading limits apply to all vector sources, independently of the two
+      // specific source pairs that are eligible for geometric match emphasis.
+      const chosen = entries.filter(e => e.checkbox.checked).sort((a, b) => a.selectionOrder - b.selectionOrder);
+      if (restricted && chosen.length > 1) {
+        for (const entry of chosen.slice(1)) { entry.checkbox.checked = false; releaseEntry(entry); }
+      }
+      for (const entry of entries) {
+        if (!entry.ready) continue;
+        const blocked = restricted && !entry.checkbox.checked && chosen.length > 0;
+        entry.checkbox.disabled = blocked;
+        entry.note.textContent = blocked ? '확대하면 추가 선택 가능 · 줌 12 이상' : entry.failed ? '타일 읽기 오류' : entry.readyNote;
       }
       highlight?.syncVisibility();
     }

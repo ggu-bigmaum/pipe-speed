@@ -18,12 +18,12 @@ class Source {
   getTileGrid() { return {getZForResolution: () => 6, getTileCoordExtent: () => [0, 0, 100, 100]}; }
 }
 class Layer { constructor(options) { Object.assign(this, options); } setVisible(visible) { this.visible = visible; } getVisible() { return this.visible; } getZIndex() { return this.zIndex; } setZIndex(value) { this.zIndex = value; } changed() {} }
-async function fixture({count = 2, sewer = false} = {}) {
+async function fixture({count = 2, sewer = false, allLayers = false} = {}) {
   const elements = Object.fromEntries(['vectorTarget', 'reloadVector', 'vectorMs', 'vectorState', 'vectorCount', 'layerCount', 'vectorList'].map(id => [id, new Element()]));
   const requests = [], timers = [], hashPromises = [], layers = [], coords = [0, 0, 1, 1];
   const raw = new Uint8Array([1, 2, 3]).buffer;
   const features = Array.from({length: count}, () => ({getProperties: () => ({layer: 'sa001'}), getGeometry: () => ({getType: () => 'LineString'}), coordinates: coords}));
-  let zoom = 14;
+  let zoom = 12;
   const handlers = {};
   const view = {on(name, fn) { (handlers[name] ||= []).push(fn); }, getZoom: () => zoom, getResolution: () => 100, calculateExtent: () => [0, 0, 100, 100]};
   const map = {getView: () => view, getSize: () => [800, 600], on() {}, un() {}, render() {}, addLayer: layer => layers.push(layer)};
@@ -40,7 +40,10 @@ async function fixture({count = 2, sewer = false} = {}) {
   for (const file of ['pipe-match-highlight.js', 'distance-vectors.js']) vm.runInNewContext(fs.readFileSync(path.join(frontend, file), 'utf8'), context);
   let catalog;
   const highlight = context.window.PipeMatchHighlight.create({map, getEntries: () => catalog?.entries || [], onStateChange() {}});
-  catalog = context.window.PipeVectorCatalog.create({map, view, tilesBase: 'http://test/tiles/', config: {LAYERS: [{id: sewer ? 'kict_sewer_seoul' : 'kict_national', label: '건기연', color: '#4dabf7'}, {id: sewer ? 'sb001' : 'sa001', label: '서울시', color: '#df7c24'}]}, highlight, onChange() {}, onSelect() {}, onRecord() {}});
+  const configuredLayers = allLayers
+    ? ['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001', 'kict_sewer_national', 'reference_sewer'].map(id => ({id, label: id, reference: id === 'reference_sewer'}))
+    : [{id: sewer ? 'kict_sewer_seoul' : 'kict_national', label: '건기연', color: '#4dabf7'}, {id: sewer ? 'sb001' : 'sa001', label: '서울시', color: '#df7c24'}];
+  catalog = context.window.PipeVectorCatalog.create({map, view, tilesBase: 'http://test/tiles/', config: {LAYERS: configuredLayers}, highlight, onChange() {}, onSelect() {}, onRecord() {}});
   const flush = async () => { await Promise.all(hashPromises); for (let i = 0; i < 4; i++) await new Promise(setImmediate); };
   await flush();
   const set = (entry, checked) => { entry.checkbox.checked = checked; entry.checkbox.onchange(); };
@@ -55,19 +58,19 @@ async function fixture({count = 2, sewer = false} = {}) {
   return {catalog, highlight, entry, features, coords, tile, load, body, requests, set, setZoom, flush, timers};
 }
 
-for (const sewer of [false, true]) test(`${sewer ? 'sewer' : 'water'} pair requires zoom 14 and releases second selection on zoom out`, async () => {
+for (const sewer of [false, true]) test(`${sewer ? 'sewer' : 'water'} pair requires zoom 12 and releases second selection on zoom out`, async () => {
   const f = await fixture({sewer}), first = f.catalog.entries[0], second = f.entry;
-  f.setZoom(13); f.set(first, true);
+  f.setZoom(11); f.set(first, true);
   assert.equal(second.checkbox.disabled, true);
-  assert.match(second.note.textContent, /14/);
+  assert.match(second.note.textContent, /12/);
   f.set(second, true); // Even a queued change event cannot bypass the gate.
   assert.equal(second.checkbox.checked, false);
   assert.equal(second.layer.getVisible(), false);
-  f.setZoom(14); assert.equal(second.checkbox.disabled, false);
+  f.setZoom(12); assert.equal(second.checkbox.disabled, false);
   f.set(second, true); assert.equal(second.layer.getVisible(), true);
   const controller = new AbortController(); second.requests.set(f.tile, controller);
   const generation = second.generation;
-  f.setZoom(13.99);
+  f.setZoom(11.99);
   assert.equal(first.layer.getVisible(), true);
   assert.equal(second.checkbox.checked, false);
   assert.equal(second.layer.getVisible(), false);
@@ -75,13 +78,13 @@ for (const sewer of [false, true]) test(`${sewer ? 'sewer' : 'water'} pair requi
   assert.ok(second.generation > generation);
   assert.equal(second.source.refreshed, true);
   assert.equal(f.highlight.state().active, false);
-  f.setZoom(14); assert.equal(second.checkbox.disabled, false);
+  f.setZoom(12); assert.equal(second.checkbox.disabled, false);
   assert.equal(second.checkbox.checked, false, 'zooming in never silently reloads a second layer');
 });
 
 test('first selected source is retained even when municipal source was selected first', async () => {
   const f = await fixture(), kict = f.catalog.entries[0];
-  f.set(f.entry, true); f.set(kict, true); f.setZoom(13);
+  f.set(f.entry, true); f.set(kict, true); f.setZoom(11);
   assert.equal(f.entry.layer.getVisible(), true);
   assert.equal(kict.checkbox.checked, false);
   f.set(f.entry, false); assert.equal(kict.checkbox.disabled, false);
@@ -89,11 +92,38 @@ test('first selected source is retained even when municipal source was selected 
 
 test('an already queued loader does not decode or install a hidden comparison layer', async () => {
   const f = await fixture();
-  f.set(f.catalog.entries[0], true); f.set(f.entry, true); f.setZoom(13);
+  f.set(f.catalog.entries[0], true); f.set(f.entry, true); f.setZoom(11);
   await f.load();
   assert.equal(f.tile.features.length, 0);
   assert.equal(f.tile.symbolsBeforeInstall, 0);
   assert.equal(f.requests.length, 0);
+});
+
+test('every first vector blocks every other vector below 12, including mixed and reference sources', async () => {
+  for (let firstIndex = 0; firstIndex < 6; firstIndex++) {
+    const f = await fixture({allLayers: true});
+    f.setZoom(11.99);
+    const first = f.catalog.entries[firstIndex];
+    f.set(first, true);
+    for (const entry of f.catalog.entries) {
+      assert.equal(entry.checkbox.disabled, entry !== first, `${first.id} -> ${entry.id}`);
+    }
+    f.setZoom(12);
+    for (const entry of f.catalog.entries) {
+      assert.equal(entry.checkbox.disabled, false);
+      if (entry !== first) f.set(entry, true);
+    }
+    assert.equal(f.catalog.selected().length, 6);
+    f.setZoom(11.99);
+    assert.equal(f.catalog.selected().length, 1);
+    assert.equal(f.catalog.selected()[0], first);
+    for (const entry of f.catalog.entries.filter(e => e !== first)) {
+      assert.equal(entry.source.refreshed, true);
+      assert.equal(entry.layer.getVisible(), false);
+    }
+    f.set(first, false);
+    assert.ok(f.catalog.entries.every(entry => !entry.checkbox.disabled));
+  }
 });
 
 test('catalog installs ordinal metadata before base features and adds navy emphasis only after pair proof', async () => {
