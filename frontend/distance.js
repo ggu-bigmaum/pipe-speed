@@ -612,7 +612,8 @@
     vectorMap.addLayer(gridLayer);
     const tilesBase = cfg.API_BASE ? cfg.API_BASE.replace(/\/$/, '') + '/tiles/' : new URL('../tiles/', location.href).href;
     vectorCatalog = window.PipeVectorCatalog.create({map: vectorMap, view, config: cfg, tilesBase, onChange: () => { syncLegend(); pipePicker?.syncVisibility(); }, onSelect: () => measureTab('vector'), onRecord: addRecord});
-    pipePicker = window.PipeVectorSelection.create({map: vectorMap, getEntries: () => vectorCatalog.entries, onSelect: closeDetails});
+    const comparison = window.PipeComparison.create({apiBase: cfg.API_BASE});
+    pipePicker = window.PipeVectorSelection.create({map: vectorMap, getEntries: () => vectorCatalog.entries, onSelect: closeDetails, comparison});
     map.on('singleclick', event => {
       if (pipePicker.pick(event.coordinate)) return;
       closeDetails(); pick(event.coordinate);

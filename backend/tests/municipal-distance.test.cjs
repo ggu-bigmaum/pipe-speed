@@ -71,6 +71,7 @@ async function startup(cityStates, search = '') {
   };
   context.window = {ol, GeoTIFF: {}, APP_CONFIG: {}, PipeDistanceCore: require(path.join(frontend, 'distance-core.js')),
     PipeVectorCatalog: {create: () => ({selected: () => [], entries: []})},
+    PipeComparison: {create: () => ({show() {}, clear() {}})},
     PipeVectorSelection: {create: () => ({pick: () => false, clear() {}, syncVisibility() {}, getSelection: () => null})}};
   await vm.runInNewContext(fs.readFileSync(path.join(frontend, 'distance.js'), 'utf8'), context);
   for (let i = 0; i < 5; i++) await new Promise(setImmediate);

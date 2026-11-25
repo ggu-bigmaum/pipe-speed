@@ -56,6 +56,22 @@
       <div id="gridDetailsExtra"><p class="hint">파랑: 격자 중심 · 빨강: 최근접점<br>점선: Case 1 거리 조회선 · X/Y: EPSG:32652</p><a id="downloadResult" href="#" class="text-link">result 원본 내려받기 ↗</a></div>
       <div id="pipeDetails" hidden>
         <label id="pipeCandidatePicker" for="pipeCandidates" hidden>겹친 관로 선택<select id="pipeCandidates"></select></label>
+        <section id="pipeComparison" class="pipe-comparison" aria-label="관로 비교 정보" hidden>
+          <h3>관로 비교</h3>
+          <p id="pipeComparisonMessage" class="hint" role="status" aria-live="polite"></p>
+          <label id="pipeSourcePicker" for="pipeSources" hidden>연결된 원본 관로<select id="pipeSources"></select></label>
+          <div id="pipeComparisonResult" hidden>
+            <strong id="pipeComparisonStatus" class="comparison-state"></strong>
+            <p id="pipeComparisonMeaning" class="hint"></p>
+            <dl id="pipeComparisonFacts"></dl>
+            <p id="pipeComparisonReason" class="comparison-reason"></p>
+            <details class="comparison-evidence"><summary>판정 근거 자세히</summary><dl id="pipeComparisonEvidenceValues"></dl></details>
+            <p id="pipeCounterpartsHeading" class="hint"></p><ul id="pipeCounterparts"></ul>
+            <button id="pipeCounterpartsMore" class="wide" type="button" hidden>대응 관계 더 보기</button>
+          </div>
+          <button id="pipeComparisonRetry" type="button" hidden>비교 정보 다시 확인</button>
+        </section>
+        <h3 class="pipe-attributes-heading">지도에 포함된 원본 속성</h3>
         <dl id="pipeAttributes"></dl>
         <p class="hint">빨간 선: 선택한 관로 구간<br>현재 지도에 포함된 속성을 표시합니다.</p>
       </div>
@@ -88,5 +104,5 @@
 </main>
 <dialog id="styleDialog" aria-labelledby="styleTitle"><div class="card-heading"><div><h2 id="styleTitle">거리 범례 설정</h2><p class="hint">단위 m · 경계값은 작은 순서로 입력</p></div><button id="closeStyle" class="icon" aria-label="범례 설정 닫기">×</button></div><div id="bins"></div><p id="styleError" class="error" role="alert"></p><div class="row"><button id="resetStyle">초기값</button><button id="applyStyle" class="primary">적용</button></div></dialog>
 <dialog id="recordsDialog" aria-labelledby="recordsTitle"><div class="dialog-head"><div><h2 id="recordsTitle">속도 측정 기록</h2><p class="hint">TIF 원본 읽기·메모리 재표시·벡터타일은 서로 다른 측정입니다. 단위 ms.</p></div><button id="closeRecords">닫기</button></div><div class="table-wrap"><table><thead><tr><th>유형</th><th>대상</th><th>다운로드</th><th>해석·표시</th><th>합계</th><th>파일 KB</th><th>줌</th><th>상태</th></tr></thead><tbody id="recordsBody"></tbody></table></div><div class="row"><span id="summary"></span><button id="clearRecords">기록 지우기</button></div></dialog>
-<script src="config.js"></script><script src="vendor/geotiff-3.0.4.js"></script><script src="vendor/ol-10.11.0.js"></script><script src="distance-core.js"></script><script src="distance-vectors.js"></script><script src="pipe-selection.js"></script><script src="distance.js"></script>
+<script src="config.js"></script><script src="vendor/geotiff-3.0.4.js"></script><script src="vendor/ol-10.11.0.js"></script><script src="distance-core.js"></script><script src="distance-vectors.js"></script><script src="pipe-comparison.js"></script><script src="pipe-selection.js"></script><script src="distance.js"></script>
 </body></html>

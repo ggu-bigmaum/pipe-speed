@@ -85,6 +85,8 @@ for dataset_id, label in [('seoul_water', '서울시 상수'), ('seoul_sewer', '
 app.register_blueprint(create_national_distance_blueprint(ROOT / 'data' / 'distance'))
 from reference_sewer import create_reference_sewer_blueprint
 app.register_blueprint(create_reference_sewer_blueprint(ROOT / 'data' / 'reference_sewer'))
+from comparison import create_comparison_blueprint
+app.register_blueprint(create_comparison_blueprint(ROOT / 'data' / 'comparison' / 'water'))
 CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)

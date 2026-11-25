@@ -1,4 +1,4 @@
-/* Read-only picking of visible pipe features. No new data fetch or source edits. */
+/* Read-only picking of visible pipe features and their comparison records. */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -29,7 +29,7 @@
     }
     return null;
   }
-  function create({map, getEntries, onSelect}) {
+  function create({map, getEntries, onSelect, comparison}) {
     let candidates = [], selected = null;
     const source = new ol.source.Vector();
     const highlight = new ol.layer.Vector({source, zIndex:200, style:[
@@ -38,6 +38,7 @@
     ]});
     map.addLayer(highlight);
     function clear() {
+      comparison?.clear();
       candidates=[]; selected=null; source.clear();
       $('pipeDetails').hidden=true; $('pipeCandidates').replaceChildren(); $('pipeAttributes').replaceChildren();
       if ($('detailPanel').dataset.mode === 'pipe') {
@@ -80,6 +81,7 @@
       if(!rows.length) {
         const text=document.createElement('p'); text.textContent='제공된 속성이 없습니다.'; $('pipeAttributes').append(text);
       }
+      comparison?.show({entry:item.entry, feature:item.feature, isCurrent:()=>selected===item && available(item) && $('detailPanel').dataset.mode==='pipe'});
     }
     function pick(coordinate) {
       const entries=getEntries().filter(e=>e.checkbox.checked && e.layer);

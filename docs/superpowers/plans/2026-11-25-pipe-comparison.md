@@ -17,10 +17,10 @@
 - [x] Verify conservation, duplicate handling, old regression examples, boundary differences and provenance. Commit phase 2 alone.
 
 ## Stage 3 — per-pipe lookup
-- [ ] Verify actual MVT identifiers and geometry lineage before establishing lookup.
-- [ ] Test bounded requests, ambiguous identifiers, safe text, stale requests and source-unavailable states.
-- [ ] Add read-only backend lookup and click-panel comparison section with status, reason and paged counterparts.
-- [ ] Preserve existing selection, grid inspection, layer toggles and source attributes. Commit phase 3 alone.
+- [x] Verify actual MVT identifiers and geometry lineage before establishing lookup.
+- [x] Test bounded requests, ambiguous identifiers, safe text, stale requests and source-unavailable states.
+- [x] Add read-only backend lookup and click-panel comparison section with status, reason and paged counterparts.
+- [x] Preserve existing selection, grid inspection, layer toggles and source attributes. Commit phase 3 alone.
 
 ## Stage 4 — strict map emphasis
 - [ ] Inspect current map palette; implement a separate strict-match style and legend, distinguishable from click selection.
@@ -31,4 +31,3 @@
 ## Completion evidence
 - [ ] Record each stage commit, result counts and validation in a small tracked report; large generated data stay ignored.
 - [ ] Confirm local app renders comparison data and all existing groups; preserve original geometry and startup selection behavior.
-
