@@ -23,11 +23,11 @@
 - [x] Preserve existing selection, grid inspection, layer toggles and source attributes. Commit phase 3 alone.
 
 ## Stage 4 — strict map emphasis
-- [ ] Inspect current map palette; implement a separate strict-match style and legend, distinguishable from click selection.
-- [ ] Enable only when both water layers are on. Turning either off removes emphasis and cancels stale requests.
-- [ ] Test strict vs similar/partial/crossing matches, viewport updates, duplicate IDs, failures and bounded caches.
-- [ ] Run backend, frontend and actual-browser checks; install verified local result; commit.
+- [x] Inspect current map palette; implement a separate strict-match style and legend, distinguishable from click selection.
+- [x] Enable only when both water layers are on. Turning either off removes emphasis and cancels stale requests.
+- [x] Test strict vs similar/partial/crossing matches, viewport updates, duplicate IDs, failures and bounded caches.
+- [x] Run backend, frontend and actual-browser checks; install verified local result; commit.
 
 ## Completion evidence
-- [ ] Record each stage commit, result counts and validation in a small tracked report; large generated data stay ignored.
-- [ ] Confirm local app renders comparison data and all existing groups; preserve original geometry and startup selection behavior.
+- [x] Record each stage commit, result counts and validation in a small tracked report; large generated data stay ignored.
+- [x] Confirm local app renders comparison data and all existing groups; preserve original geometry and startup selection behavior.

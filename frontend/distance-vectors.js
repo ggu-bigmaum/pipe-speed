@@ -6,7 +6,7 @@
   // Split rendering instructions, retaining every feature and its coordinates.
   const FEATURES_PER_CANVAS_BATCH = 16384;
   const canvasBatch = Symbol('canvasBatch');
-  function create({map, view, config, tilesBase, onChange, onSelect, onRecord}) {
+  function create({map, view, config, tilesBase, onChange, onSelect, onRecord, highlight}) {
     const entries = [];
     let pending, sequence = 0;
     const selected = () => entries.filter(entry => entry.checkbox.checked && entry.layer);
@@ -19,6 +19,7 @@
       for (const controller of entry.requests.values()) controller.abort('superseded');
       entry.failed = false; entry.failedTiles.clear(); entry.retryTiles.clear();
       entry.source.refresh(); entry.note.textContent = entry.readyNote;
+      highlight?.syncVisibility();
     }
     const updateTarget = () => {
       const items = selected();
@@ -94,7 +95,7 @@
       const entry = {...layer, readyNote: '', color: layer.color || '#4dabf7', row, checkbox, note, source: null, layer: null, failed: false, generation: 0, tileGenerations: new WeakMap(), failedTiles: new Map(), retryTiles: new Map(), requests: new Map(), cancelledTiles: new WeakSet()}; entries.push(entry);
       checkbox.onchange = () => {
         if (entry.failed && checkbox.checked) refresh(entry);
-        entry.layer.setVisible(checkbox.checked); entry.overlay?.setVisible(checkbox.checked); cancelObsolete(); onChange(); onSelect(); measure();
+        entry.layer.setVisible(checkbox.checked); entry.overlay?.setVisible(checkbox.checked); cancelObsolete(); highlight?.syncVisibility(); onChange(); onSelect(); measure();
       };
       (async () => {
         try {
@@ -110,9 +111,10 @@
           entry.format = format;
           const styles = [];
           const stroke = new ol.style.Stroke({color: entry.color, width: 1.8});
-          const featureStyle = feature => {
+          const featureStyle = (feature, resolution) => {
             const batch = feature[canvasBatch] || 0;
-            return styles[batch] || (styles[batch] = new ol.style.Style({stroke, zIndex: batch}));
+            const baseStyle = styles[batch] || (styles[batch] = new ol.style.Style({stroke, zIndex: batch}));
+            return highlight ? highlight.style(feature, entry, baseStyle, resolution) : baseStyle;
           };
           const source = new ol.source.VectorTile({
             format, minZoom: meta.minzoom, maxZoom: meta.maxzoom, tileSize: config.TILE_SIZE || 512, wrapX: false, transition: 0,
@@ -127,11 +129,15 @@
                   if (!response.ok) throw new Error('타일 응답 오류');
                   if (response.status === 204) { tile.setFeatures([]); return; }
                   const data = await response.arrayBuffer();
+                  if (controller.signal.aborted || generation !== entry.generation) throw new Error('타일 요청이 바뀌었습니다.');
                   const features = data.byteLength ? format.readFeatures(data, {extent, featureProjection: projection}) : [];
                   for (let i = FEATURES_PER_CANVAS_BATCH; i < features.length; i++) {
                     // Private render metadata, not an attribute in the tile or source data.
                     features[i][canvasBatch] = Math.floor(i / FEATURES_PER_CANVAS_BATCH);
                   }
+                  // Hash/proof work is asynchronous and never delays the base tile.
+                  // Attach original ordinals before OL can sort its feature array.
+                  highlight?.attachTile(entry, tile, features, data);
                   tile.setFeatures(features);
                 } catch (_) {
                   if (controller.signal.reason === 'offscreen' || controller.signal.reason === 'superseded' || generation !== entry.generation) {

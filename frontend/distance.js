@@ -59,7 +59,7 @@
     rasterInputs().forEach(input => { $(input).checked = input === selectedDataset.inputs[id]; });
   }
   const defaults = {breaks: [10, 50, 100, 500], colors: ['#08306b', '#2171b5', '#4292c6', '#9ecae1', '#f7fbff']};
-  let style = structuredClone(defaults), meta, map, view, selection, currentLayer, currentSource, vectorMap, vectorCatalog, gridLayer, pipePicker;
+  let style = structuredClone(defaults), meta, map, view, selection, currentLayer, currentSource, vectorMap, vectorCatalog, gridLayer, pipePicker, matchHighlight;
   let selectedCase = 'case1', busy = false, running = false, stopped = false, active, clickController, clickSeq = 0;
   let records = [], sourceRevision = 0, suppressMove = false, ready = false;
   let moveController, gridController, gridTimer, gridRevision = 0, gridDatasetId;
@@ -104,6 +104,16 @@
     $('vectorLegend').replaceChildren();
     const vectors = vectorCatalog?.selected() || [];
     for (const entry of vectors) { const row = document.createElement('div'), line = document.createElement('span'); row.className = 'vector-legend-row'; line.className = 'layer-line'; line.style.background = entry.color; row.append(line, document.createTextNode(entry.label)); $('vectorLegend').append(row); }
+    const matchState = matchHighlight?.state();
+    if (matchState?.active) {
+      const row = document.createElement('div'), line = document.createElement('span'), note = document.createElement('p');
+      row.className = 'vector-legend-row match-legend-row'; line.className = 'match-legend-line'; line.setAttribute('aria-hidden', 'true');
+      row.append(line, document.createTextNode('ID·전체 선형 완전일치'));
+      note.className = 'hint match-legend-note';
+      note.textContent = matchState.status === 'error' ? '일치 정보를 일부 확인하지 못했습니다. 확인된 관로만 강조합니다.' :
+        matchState.status === 'loading' ? '완전일치 표시 정보를 확인하는 중…' : '원본 ID와 전체 선형이 모두 같은 관로입니다.';
+      $('vectorLegend').append(row, note);
+    }
     $('emptyLegend').hidden = shown || vectors.length > 0;
   }
   async function json(url, options) {
@@ -611,7 +621,8 @@
       style: new ol.style.Style({stroke: new ol.style.Stroke({color: 'rgba(35,63,84,.42)', width: .6})})});
     vectorMap.addLayer(gridLayer);
     const tilesBase = cfg.API_BASE ? cfg.API_BASE.replace(/\/$/, '') + '/tiles/' : new URL('../tiles/', location.href).href;
-    vectorCatalog = window.PipeVectorCatalog.create({map: vectorMap, view, config: cfg, tilesBase, onChange: () => { syncLegend(); pipePicker?.syncVisibility(); }, onSelect: () => measureTab('vector'), onRecord: addRecord});
+    matchHighlight = window.PipeMatchHighlight.create({map: vectorMap, getEntries: () => vectorCatalog?.entries || [], apiBase: cfg.API_BASE, onStateChange: syncLegend});
+    vectorCatalog = window.PipeVectorCatalog.create({map: vectorMap, view, config: cfg, tilesBase, highlight: matchHighlight, onChange: () => { syncLegend(); pipePicker?.syncVisibility(); }, onSelect: () => measureTab('vector'), onRecord: addRecord});
     const comparison = window.PipeComparison.create({apiBase: cfg.API_BASE});
     pipePicker = window.PipeVectorSelection.create({map: vectorMap, getEntries: () => vectorCatalog.entries, onSelect: closeDetails, comparison});
     map.on('singleclick', event => {
@@ -636,7 +647,7 @@
     view.on('change:center', invalidateViewportGrid); view.on('change:resolution', invalidateViewportGrid);
     map.on('moveend', scheduleGrid);
     // Read-only diagnostics for browser regression tests.
-    window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getSources: () => currentSources.slice(), getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice(), getPipeSelection: () => pipePicker.getSelection()};
+    window.pipeDistance = {map, getMeta: () => meta, getRecords: () => records.slice(), getLayer: () => currentLayer, getSources: () => currentSources.slice(), getGrid: () => gridLayer, vectorMap, getVectors: () => vectorCatalog.entries.slice(), getPipeSelection: () => pipePicker.getSelection(), getMatchHighlight: () => matchHighlight.state()};
     const catalogReady = loadNationalCatalog();
     const municipalReady = loadMunicipalAvailability();
     if (requestedDataset?.startsWith('kict_water_national_') || requestedDataset?.startsWith('kict_sewer_national_')) {

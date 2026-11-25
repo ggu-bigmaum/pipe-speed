@@ -226,9 +226,9 @@ def _counterparts(connection, dataset, source_fid, offset, selected_length):
                 next_offset=offset + len(items) if offset + len(items) < total else None)
 
 
-def create_comparison_blueprint(directory):
+def create_comparison_blueprint(directory, *, package=None):
     bp = Blueprint('water_comparison', __name__, url_prefix='/comparison/water')
-    package = ComparisonPackage(directory)
+    package = package if package is not None else ComparisonPackage(directory)
 
     @bp.errorhandler(RequestError)
     def invalid(error):

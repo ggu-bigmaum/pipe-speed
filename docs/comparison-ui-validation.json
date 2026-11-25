@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-25",
+  "stage_2_commit": "20562e3",
+  "stage_3_commit": "5789ab2",
+  "python_tests": {"passed": 180, "failed": 0, "skipped": 0},
+  "javascript_tests": {"passed": 35, "failed": 0, "skipped": 0},
+  "python_39_syntax_modules": 4,
+  "actual_browser": {
+    "url": "http://localhost:8000/app/",
+    "viewport": [1280, 720],
+    "both_water_layers_gold_navy_emphasis": true,
+    "one_water_layer_off_restores_original_color": true,
+    "red_click_selection_above_emphasis": true,
+    "per_pipe_state_reason_counterpart_rendered": true,
+    "original_attributes_retained": true,
+    "existing_distance_raster_and_grid_lookup": true,
+    "grid_example": {"id": "16687047", "case1_m": 2.521, "case2_m": 0},
+    "console_errors_observed": 0
+  },
+  "http_regressions": [
+    {"original_id": "64712000100", "status": "CONFLICT", "strict": false, "coverage": 0, "accepted_relations": 0},
+    {"original_id": "44792000018", "status": "MATCH", "strict": false, "coverage": 0.9627326578083965, "accepted_relations": 2},
+    {"original_id": "55552110482", "status": "MATCH", "strict": true, "coverage": 1, "accepted_relations": 1}
+  ],
+  "sidecar_samples": [
+    {"zxy": [17, 111768, 50760], "features": 212, "strict_features": 207, "response_bytes": 333, "cold_seconds": 0.0507, "cached_seconds": 0.0009},
+    {"zxy": [10, 873, 396], "features": 1192687, "strict_features": 1159209, "response_bytes": 199089, "cold_seconds": 12.3665, "cached_seconds": 0.0012}
+  ],
+  "independent_review": "Query plan, duplicate counterpart labels, inter-layer draw ordering, and timeout findings fixed; no remaining actionable findings.",
+  "limitations": [
+    "Tile sample counts include tile features, not unique pipes across tiles.",
+    "Local timings do not predict production performance.",
+    "Existing very large national sewer tiles and their browser OOM risk are not changed by this water comparison task.",
+    "Only the supplied Seoul water comparison is classified. Sewer correction and original geometries are unchanged."
+  ],
+  "remote_push": false,
+  "production_deployment": false
+}

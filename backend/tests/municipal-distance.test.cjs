@@ -28,6 +28,7 @@ class MapAdapter {
 
 async function startup(cityStates, search = '') {
   const elements = {};
+  let highlightState = {active: false, status: 'inactive'}, highlightChange;
   const html = fs.readFileSync(path.join(frontend, 'index.html'), 'utf8');
   for (const [, id] of html.matchAll(/id="([^"]+)"/g)) elements[id] = new Element();
   const rasters = [...html.matchAll(/<input id="([^"]+)" data-raster/g)].map(([, id]) => {
@@ -71,11 +72,12 @@ async function startup(cityStates, search = '') {
   };
   context.window = {ol, GeoTIFF: {}, APP_CONFIG: {}, PipeDistanceCore: require(path.join(frontend, 'distance-core.js')),
     PipeVectorCatalog: {create: () => ({selected: () => [], entries: []})},
+    PipeMatchHighlight: {create: ({onStateChange}) => { highlightChange = onStateChange; return {syncVisibility() {}, state: () => highlightState}; }},
     PipeComparison: {create: () => ({show() {}, clear() {}})},
     PipeVectorSelection: {create: () => ({pick: () => false, clear() {}, syncVisibility() {}, getSelection: () => null})}};
   await vm.runInNewContext(fs.readFileSync(path.join(frontend, 'distance.js'), 'utf8'), context);
   for (let i = 0; i < 5; i++) await new Promise(setImmediate);
-  return {elements, requests, context, rasters};
+  return {elements, requests, context, rasters, setHighlightState: value => { highlightState = value; highlightChange(); }};
 }
 const state = (dataset_id, available = false, extra = {}) => ({
   dataset_id, label: dataset_id === 'seoul_water' ? '서울시 상수' : '서울시 하수',
@@ -128,4 +130,18 @@ test('direct municipal link waits for availability and does not select missing f
   assert.equal(elements.seoulWaterCase1.disabled, true);
   assert.equal(requests.some(url => url.endsWith('/meta')), false);
   assert.match(elements.status.textContent, /서울시 상수.*자료 대기/);
+});
+
+test('strict comparison legend follows its own loading/error state without selecting a raster', async () => {
+  const {elements, rasters, setHighlightState} = await startup({seoul_water: state('seoul_water'), seoul_sewer: state('seoul_sewer')});
+  const text = node => typeof node === 'string' ? node : (node.textContent || '') + node.children.map(text).join('');
+  setHighlightState({active: true, status: 'loading'});
+  assert.match(text(elements.vectorLegend), /ID·전체 선형 완전일치/);
+  assert.match(text(elements.vectorLegend), /확인하는 중/);
+  setHighlightState({active: true, status: 'error'});
+  assert.match(text(elements.vectorLegend), /확인하지 못/);
+  assert.equal(rasters.some(input => input.checked), false);
+  assert.equal(elements.rasterLegend.hidden, true);
+  setHighlightState({active: false, status: 'inactive'});
+  assert.doesNotMatch(text(elements.vectorLegend), /완전일치/);
 });
