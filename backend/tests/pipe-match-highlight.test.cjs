@@ -53,7 +53,7 @@ test('both water layers are required and successful flags share cached styles', 
   f.toggle(true); await flush(); assert.equal(f.requests.length, 1);
   f.requests[0].resolve(f.reply(t)); await flush();
   const styles = f.service.style(t.features[0], f.entries[1], f.base, 100);
-  assert.equal(styles.length, 2); assert.equal(styles, f.service.style(t.features[0], f.entries[1], f.base, 100));
+  assert.equal(styles.length, 1); assert.equal(styles, f.service.style(t.features[0], f.entries[1], f.base, 100));
   assert.equal(f.service.style(t.features[1], f.entries[1], f.base, 100), f.base);
   assert.equal(f.service.state().matchedTileCount, 1);
   f.toggle(false); assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100), f.base);
@@ -63,7 +63,7 @@ test('both water layers are required and successful flags share cached styles', 
 test('MVT ordinals survive a renderer in-place array reorder', async () => {
   const f = fixture(), t = f.tile(), original = t.features[0]; t.features.reverse(); f.toggle(true); await flush();
   f.requests[0].resolve(f.reply(t)); await flush();
-  assert.equal(f.service.style(original, f.entries[1], f.base, 100).length, 2);
+  assert.equal(f.service.style(original, f.entries[1], f.base, 100).length, 1);
   assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100), f.base);
 });
 
@@ -80,7 +80,7 @@ test('turning off aborts pending lookup and a late successful response cannot pa
   assert.equal(old.options.signal.aborted, true); old.resolve(f.reply(t)); await flush();
   assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100), f.base);
   f.toggle(true); await flush(); assert.equal(f.requests.length, 2);
-  f.requests[1].resolve(f.reply(t)); await flush(); assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100).length, 2);
+  f.requests[1].resolve(f.reply(t)); await flush(); assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100).length, 1);
 });
 
 test('metadata failure and stale activation metadata never enable comparison', async () => {
@@ -97,7 +97,7 @@ test('a failed tile retries only after a new activation and valid cache avoids a
   await flush(); assert.equal(f.requests.length, 1);
   f.toggle(false); f.toggle(true); await flush(); f.requests[1].resolve(f.reply(t)); await flush();
   f.toggle(false); f.toggle(true); await flush(); assert.equal(f.requests.length, 2);
-  assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100).length, 2);
+  assert.equal(f.service.style(t.features[0], f.entries[1], f.base, 100).length, 1);
 });
 
 test('registry and request queue remain bounded and an evicted OL-cached tile can re-register', async () => {
@@ -123,9 +123,9 @@ test('highlight styles retain distinct canvas batches and use only two width tie
   const f = fixture(), t = f.tile(); f.toggle(true); await flush(); f.requests[0].resolve(f.reply(t)); await flush();
   const otherBase = new Style({zIndex: 17});
   const far = f.service.style(t.features[0], f.entries[1], f.base, 100), near = f.service.style(t.features[0], f.entries[1], f.base, 10), batch = f.service.style(t.features[0], f.entries[1], otherBase, 100);
-  assert.deepEqual(Array.from(far, style => style.getStroke().getWidth()), [3.6, 1.8]);
-  assert.deepEqual(Array.from(near, style => style.getStroke().getWidth()), [6, 3.2]);
-  assert.deepEqual(Array.from(near, style => style.getStroke().color), ['#ffffff', '#17212f']);
+  assert.deepEqual(Array.from(far, style => style.getStroke().getWidth()), [1.8]);
+  assert.deepEqual(Array.from(near, style => style.getStroke().getWidth()), [3.2]);
+  assert.deepEqual(Array.from(near, style => style.getStroke().color), ['#17212f']);
   assert.notEqual(batch[0].getZIndex(), far[0].getZIndex());
   assert.equal(near, f.service.style(t.features[0], f.entries[1], f.base, 1));
   assert.equal(f.service.style(t.features[0], f.entries[0], f.base, 10), f.base);
@@ -179,11 +179,11 @@ test('all four layers prove independently and switching off water preserves sewe
   assert.equal(f.requests.length, 2);
   f.requests.find(request => request.url.includes('/water/')).resolve(f.reply(water));
   f.requests.find(request => request.url.includes('/sewer/')).resolve(f.reply(sewer)); await flush();
-  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10).length, 2);
-  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 2);
+  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10).length, 1);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 1);
   f.setLayers(['sa001', 'kict_sewer_seoul', 'sb001']);
   assert.equal(f.service.style(water.features[0], water.entry, f.base, 10), f.base);
-  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 2);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 1);
   assert.equal(water.entry.layer.getZIndex(), 10); assert.equal(sewer.entry.layer.getZIndex(), 30);
 });
 
@@ -197,7 +197,7 @@ test('one pair metadata failure does not prevent the other pair from becoming re
   assert.equal(f.service.state().pairs.sewer.status, 'ready');
   assert.equal(f.service.state().pairs.sewer.highlightLabel, '하수 검증 기준');
   assert.equal(f.service.style(water.features[0], water.entry, f.base, 10), f.base);
-  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 2);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 1);
 });
 
 test('shared request limit includes both pair metadata and flags, and a released slot serves the other pair', async () => {
@@ -225,7 +225,7 @@ test('a late disabled sewer response cannot remove or replace an active water re
   f.setLayers(['kict_national', 'sa001', 'sb001']);
   assert.equal(oldSewer.options.signal.aborted, true); oldSewer.resolve(f.reply(sewer)); await flush();
   assert.equal(f.service.state().pairs.water.status, 'ready');
-  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10).length, 2);
+  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10).length, 1);
   assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10), f.base);
 });
 
@@ -238,4 +238,24 @@ test('unavailable sewer criteria remain pending without implying a comparison re
   assert.equal(state.message, '하수 비교 기준 확인이 필요합니다.');
   assert.equal(f.requests.length, 1, 'unavailable criteria never request or manufacture tile flags');
   assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10), f.base);
+});
+
+test('both pairs hide the KICT duplicate only after the same municipal tile is verified, then restore on deselect', async () => {
+  for (const [left,right] of [['kict_national','sa001'],['kict_sewer_seoul','sb001']]) {
+    const f=fixture({allPairs:true}), k=f.tile(0,2,left), s=f.tile(0,2,right);
+    f.setLayers([left,right]); await flush();
+    assert.equal(f.requests.length,2);
+    const kr=f.requests.find(r=>r.url.includes('/tiles/'+left+'/'));
+    const sr=f.requests.find(r=>r.url.includes('/tiles/'+right+'/'));
+    kr.resolve(f.reply(k,1,{version:left.includes('sewer')?'sewer-v1':'v1'})); await flush();
+    assert.equal(f.service.style(k.features[0],k.entry,f.base,100),f.base,'keep original until counterpart is ready');
+    sr.resolve(f.reply(s)); await flush();
+    assert.equal(f.service.style(k.features[0],k.entry,f.base,100).length,0,'matched KICT is not drawn');
+    assert.equal(f.service.style(k.features[1],k.entry,f.base,100),f.base,'unmatched KICT remains');
+    const black=f.service.style(s.features[0],s.entry,f.base,100);
+    assert.equal(black.length,1); assert.equal(black[0].getStroke().color,'#17212f');
+    assert.equal(f.service.style(s.features[1],s.entry,f.base,100),f.base,'unmatched Seoul remains');
+    f.setLayers([left]); assert.equal(f.service.style(k.features[0],k.entry,f.base,100),f.base);
+    f.setLayers([right]); assert.equal(f.service.style(s.features[0],s.entry,f.base,100),f.base);
+  }
 });

@@ -21,6 +21,7 @@ class Element {
 class MapAdapter {
   constructor(options = {}) { Object.assign(this, options); }
   on() {} un() {} addLayer() {} removeLayer() {} render() {} fit() {} dispose() {} clear() {}
+  adjustZoom() {}
   getZoom() { return 11; }
   getSource() { return this.source; }
   setVisible(visible) { this.visible = visible; }

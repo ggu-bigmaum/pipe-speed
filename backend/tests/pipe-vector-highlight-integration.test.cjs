@@ -155,7 +155,7 @@ test('catalog installs ordinal metadata before base features and adds navy empha
   assert.ok(f.timers.includes(90000), 'server queue and large sidecar build have a separate bounded deadline');
   f.requests[0].resolve(f.body()); await f.flush();
   const styles = f.entry.layer.style(f.features.at(-1), 100);
-  assert.equal(styles.length, 2); assert.equal(styles[0].stroke.color, '#ffffff'); assert.equal(styles[1].stroke.color, '#17212f'); assert.equal(styles[0].getZIndex(), 10002);
+  assert.equal(styles.length, 1); assert.equal(styles[0].stroke.color, '#17212f'); assert.equal(styles[0].getZIndex(), 10003);
   assert.equal(f.entry.layer.style(f.features[0], 100).stroke.color, '#df7c24');
   assert.equal(f.features.at(-1).coordinates, f.coords, 'original geometry is not copied or replaced');
   f.set(f.catalog.entries[0], false);
@@ -168,4 +168,17 @@ test('comparison sidecar failure leaves the original catalog tile healthy', asyn
   assert.equal(f.entry.failed, false); assert.equal(f.tile.state, undefined); assert.equal(f.tile.features, f.features);
   assert.equal(f.entry.layer.style(f.features[1], 100).stroke.color, '#df7c24');
   assert.equal(f.highlight.state().status, 'error');
+});
+
+test('changing vector tile zoom drops previous zoom features and invalidates late requests', async () => {
+  const f=await fixture(), first=f.catalog.entries[0];
+  f.set(first,true);
+  const generation=first.generation;
+  const controller=new AbortController(); first.requests.set(f.tile,controller);
+  first.source.getTileGrid=()=>({getZForResolution:()=>7,getTileCoordExtent:()=>[0,0,100,100]});
+  f.setZoom(13);
+  assert.equal(first.layer.getVisible(),true);
+  assert.equal(first.source.refreshed,true);
+  assert.ok(first.generation>generation);
+  assert.equal(controller.signal.aborted,true);
 });

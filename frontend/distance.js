@@ -616,7 +616,7 @@
     map = new ol.Map({target: 'map', view, interactions, layers: [], controls: [new ol.control.Zoom({duration: 0}), new ol.control.ScaleLine()]});
     // The background must start even when local raster metadata is unavailable.
     background();
-    vectorMap = new ol.Map({target: 'vectorMap', view, layers: [new ol.layer.Vector({source: selection, zIndex: 100, style: feature => selectionStyles[feature.get('kind')]})], interactions: [], controls: []});
+    vectorMap = new ol.Map({target: 'vectorMap', view, maxTilesLoading: 2, layers: [new ol.layer.Vector({source: selection, zIndex: 100, style: feature => selectionStyles[feature.get('kind')]})], interactions: [], controls: []});
     gridLayer = new ol.layer.Vector({source: new ol.source.Vector(), zIndex: 5, minZoom: 12, visible: false,
       opacity: Number($('opacity').value) / 100,
       style: new ol.style.Style({stroke: new ol.style.Stroke({color: 'rgba(35,63,84,.42)', width: .6})})});

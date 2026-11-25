@@ -51,6 +51,7 @@
     function refresh(entry) {
       entry.generation++;
       for (const controller of entry.requests.values()) controller.abort('superseded');
+      entry.requests.clear();
       entry.failed = false; entry.failedTiles.clear(); entry.retryTiles.clear();
       entry.source.refresh(); entry.note.textContent = entry.readyNote;
       highlight?.syncVisibility();
@@ -106,7 +107,14 @@
         }
       }
     }
-    function redraw() { syncZoomGate(); cancelObsolete(); onChange(); measure(); }
+    function redraw() {
+      syncZoomGate();
+      for (const entry of selected()) {
+        const zoom = entry.source.getTileGrid().getZForResolution(view.getResolution(), 1);
+        if (entry.cachedZoom !== zoom) { entry.cachedZoom = zoom; refresh(entry); }
+      }
+      cancelObsolete(); onChange(); measure();
+    }
     view.on('change:center', redraw); view.on('change:resolution', redraw);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && pending) { pending.cancel(); $('vectorMs').textContent = '—'; $('vectorState').textContent = '탭이 숨겨져 측정을 중단했습니다.'; }
@@ -132,7 +140,10 @@
         if (checkbox.checked) entry.selectionOrder = ++selectionOrder;
         syncZoomGate();
         if (entry.failed && checkbox.checked) refresh(entry);
-        if (checkbox.checked) { entry.layer.setVisible(true); entry.overlay?.setVisible(true); }
+        if (checkbox.checked) {
+          entry.cachedZoom = entry.source.getTileGrid().getZForResolution(view.getResolution(), 1);
+          entry.layer.setVisible(true); entry.overlay?.setVisible(true);
+        }
         else if (entry.layer.getVisible()) releaseEntry(entry);
         cancelObsolete(); syncZoomGate(); onChange(); onSelect(); measure();
       };

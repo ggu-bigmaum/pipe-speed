@@ -33,6 +33,7 @@
     let version = null, metadataRequest = null, metadataError = false, redrawPending = false, emitted = '';
     let highlightLabel = 'ID·전체 선형 완전일치', description = '원본 ID와 전체 선형이 모두 같은 관로입니다.', message = '';
     let raisedLayer = null, originalLayerZ;
+    const municipalReady = new Set(), hiddenStyle = [];
     const enabled = () => members.length === 2 && members[0].checkbox.checked && members[0].layer?.getVisible() && members[1].checkbox.checked && members[1].layer?.getVisible();
     const currentGeneration = descriptor => descriptor.generation === (descriptor.entry.generation || 0);
     const proved = descriptor => version != null && descriptor.version === version && descriptor.bits != null;
@@ -54,13 +55,15 @@
         registeredTileCount: registry.size, queuedTileCount: queue.size, inflightCount: inflight.size + (metadataRequest?.started ? 1 : 0)};
     }
     function emit() {
+      municipalReady.clear();
+      for (const d of registry.values()) if (d.entry.id === pair.target && needed(d) && proved(d)) municipalReady.add(d.coordinateKey);
       const value = state(), signature = JSON.stringify(value);
       if (signature !== emitted) { emitted = signature; onStateChange?.(value); }
     }
     function redraw() {
       if (redrawPending) return;
       redrawPending = true;
-      requestAnimationFrame(() => { redrawPending = false; members.find(entry => entry.id === pair.target)?.layer?.changed(); });
+      requestAnimationFrame(() => { redrawPending = false; for (const entry of members) entry.layer?.changed(); });
     }
     function cancelJobs() {
       const oldMetadata = metadataRequest; metadataRequest = null; queue.clear();
@@ -81,7 +84,7 @@
       if (active) pump();
     }
     function validate(data, descriptor, expectedVersion) {
-      if (data.available !== true || data.schema_version !== 1 || data.layer !== pair.target || data.version !== expectedVersion ||
+      if (data.available !== true || data.schema_version !== 1 || data.layer !== descriptor.entry.id || data.version !== expectedVersion ||
           data.sha256 !== descriptor.sha || data.feature_count !== descriptor.count ||
           !Number.isInteger(data.matched_count) || data.matched_count < 0 || data.matched_count > descriptor.count ||
           typeof data.bits_base64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.bits_base64)) throw new Error('Unverified tile flags');
@@ -105,7 +108,7 @@
       inflight.set(descriptor.id, job);
       const timer = setTimeout(() => job.controller.abort('timeout'), 90000);
       try {
-        const response = await fetch(base + 'comparison/' + pair.id + '/tiles/' + pair.target + '/' + descriptor.coordinate.join('/'), {signal: job.controller.signal, cache: 'no-store'});
+        const response = await fetch(base + 'comparison/' + pair.id + '/tiles/' + descriptor.entry.id + '/' + descriptor.coordinate.join('/'), {signal: job.controller.signal, cache: 'no-store'});
         const data = await response.json();
         if (!validJob(job)) return;
         if (!response.ok) throw new Error('Comparison tile unavailable');
@@ -183,16 +186,17 @@
       if (next === active) { sweep(); return; }
       active = next; ++activation; ++viewportRevision; version = null; metadataError = false; message = ''; cancelJobs();
       // Cached vector tiles need a new style pass; refreshing their source would redownload PBFs.
-      members.find(entry => entry.id === pair.target)?.layer?.changed();
+      for (const entry of members) entry.layer?.changed();
       if (active) { metadataRequest = {activation, controller: new AbortController(), started: false, release: null}; pump(); } else emit();
     }
     function attachTile(entry, tile, features, rawArrayBuffer) {
-      if (entry.id !== pair.target || !features.length) return;
+      if (!pair.layers.includes(entry.id) || !features.length) return;
       const descriptor = {id: ++descriptorId, entry, tile: new WeakRef(tile), coordinate: tile.getTileCoord().slice(), generation: entry.generation || 0,
         count: features.length, sha: null, bits: null, version: null, matchedCount: 0, hashError: false, failedActivation: null, seenRevision: -1};
+      descriptor.coordinateKey = descriptor.coordinate.join('/');
       for (let i = 0; i < features.length; i++) {
         const feature = features[i];
-        if (feature.getProperties().layer !== pair.target || !['LineString', 'MultiLineString'].includes(feature.getGeometry()?.getType())) descriptor.hashError = true;
+        if (feature.getProperties().layer !== entry.id || !['LineString', 'MultiLineString'].includes(feature.getGeometry()?.getType())) descriptor.hashError = true;
         Object.defineProperty(feature, originalOrdinal, {value: i});
         Object.defineProperty(feature, tileDescriptor, {value: descriptor});
       }
@@ -207,18 +211,19 @@
       } catch (_) { descriptor.hashError = true; emit(); }
     }
     function style(feature, entry, baseStyle, resolution) {
-      if (!active || !enabled() || entry.id !== pair.target) return baseStyle;
+      if (!active || !enabled() || !pair.layers.includes(entry.id)) return baseStyle;
       const descriptor = feature[tileDescriptor];
       if (!descriptor || descriptor.entry !== entry || !currentGeneration(descriptor)) return baseStyle;
       if (descriptor.seenRevision !== viewportRevision) register(descriptor);
       if (!proved(descriptor)) return baseStyle;
       const ordinal = feature[originalOrdinal];
       if (!(descriptor.bits[ordinal >> 3] & (1 << (ordinal & 7)))) return baseStyle;
+      // Keep the original until the municipal tile is proved and drawable.
+      if (entry.id !== pair.target) return municipalReady.has(descriptor.coordinateKey) ? hiddenStyle : baseStyle;
       const near = Number.isFinite(resolution) && resolution <= 20, batch = baseStyle.getZIndex?.() || 0, cache = styles[near ? 1 : 0];
       let cached = cache.get(batch);
       if (!cached) {
-        cached = [new ol.style.Style({stroke: new ol.style.Stroke({color: '#ffffff', width: near ? 6 : 3.6}), zIndex: 10000 + batch * 2}),
-          new ol.style.Style({stroke: new ol.style.Stroke({color: '#17212f', width: near ? 3.2 : 1.8}), zIndex: 10001 + batch * 2})];
+        cached = [new ol.style.Style({stroke: new ol.style.Stroke({color: '#17212f', width: near ? 3.2 : 1.8}), zIndex: 10001 + batch * 2})];
         if (cache.size >= 256) cache.delete(cache.keys().next().value);
         cache.set(batch, cached);
       }
@@ -240,7 +245,7 @@
     }
     function emit() { const value = state(), signature = JSON.stringify(value); if (signature !== emitted) { emitted = signature; onStateChange?.(value); } }
     workers = PAIRS.map(pair => createPair({map, getEntries, apiBase, pair, budget, onStateChange: emit}));
-    const byTarget = new Map(workers.map((worker, index) => [PAIRS[index].target, worker]));
+    const byTarget = new Map(workers.flatMap((worker, index) => PAIRS[index].layers.map(layer => [layer, worker])));
     const sweep = () => { for (const worker of workers) worker.sweep(); };
     map.getView().on('change:center', sweep); map.getView().on('change:resolution', sweep);
     return {
