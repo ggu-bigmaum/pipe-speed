@@ -2,7 +2,9 @@
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  const fields = {kict_national: ['FTR_IDN', 'STD_DIP', 'MOP_CDE'], sa001: ['PLINE_ID', 'PLINE_CALB', 'PLINE_MTRQ']};
+  const fields = {kict_national: ['FTR_IDN', 'STD_DIP', 'MOP_CDE'], sa001: ['PLINE_ID', 'PLINE_CALB', 'PLINE_MTRQ'], kict_sewer_seoul: ['id'], sb001: ['id']};
+  const sewer = item => ['kict_sewer_seoul', 'sb001'].includes(item.entry.id);
+  const municipal = item => ['sa001', 'sb001'].includes(item.entry.id);
   const states = {
     MATCH: ['일치', '동일하거나 비교 기준에서 상당히 유사한 관로입니다.'],
     PARTIAL_MATCH: ['부분 일치', '비교 기준을 충족하는 일부 구간이 대응합니다.'],
@@ -52,6 +54,23 @@
       return multiple;
     }
     function renderPipe(pipe, item) {
+      if (sewer(item)) {
+        $('pipeComparisonStatus').textContent = pipe.rounded_geometry_match === true ? '형상 일치' : pipe.precision_review ? '정밀도 처리 확인 필요' : '전체 형상 일치 없음';
+        $('pipeComparisonStatus').dataset.state = 'SEWER_GEOMETRY';
+        $('pipeComparisonMeaning').textContent = '소수점 3자리 반올림 후 전체 형상 비교 결과입니다. 6개 비교상태와 별도입니다.';
+        $('pipeComparisonReason').textContent = pipe.reason;
+        const facts = $('pipeComparisonFacts'); facts.replaceChildren();
+        row(facts, '비교 자료', '건기연 서울 하수 보정본 ↔ 서울시 하수');
+        row(facts, '원본 관로 ID', pipe.original_id);
+        row(facts, '3자리 반올림 후 형상 일치', yesno(pipe.rounded_geometry_match));
+        const evidence = $('pipeComparisonEvidenceValues'); evidence.replaceChildren();
+        row(evidence, '판정 기준', 'ID 조건 제외 · 소수점 3자리 반올림 · 전체 형상 비교');
+        row(evidence, '원본 객체', pipe.source_fid);
+        row(evidence, '원본 형상', '저장 좌표 유지 · 비교용 사본만 반올림');
+        if (pipe.precision_review) row(evidence, '확인 사유', '반올림 후 선이 축약되거나 유효하지 않아 판정을 보류했습니다.');
+        $('pipeComparisonResult').hidden = false;
+        return;
+      }
       const state = states[pipe.comparison_status];
       if (!state) throw new Error('Unknown comparison status');
       $('pipeComparisonStatus').textContent = `${state[0]} · ${pipe.comparison_status}`;
@@ -79,8 +98,8 @@
       if (!append) { $('pipeCounterparts').replaceChildren(); shown = 0; }
       for (const other of items) {
         const li = document.createElement('li'), title = document.createElement('strong'), detail = document.createElement('span');
-        title.textContent = `${item.entry.id === 'sa001' ? '건기연' : '서울시'} · ${display(other.original_id)} · 원본 객체 ${display(other.source_fid)}`;
-        const parts = [relations[other.relationship] || display(other.relationship)];
+        title.textContent = `${municipal(item) ? '건기연' : '서울시'} · ${display(other.original_id)} · 원본 객체 ${display(other.source_fid)}`;
+        const parts = [other.relationship === 'rounded_geometry' ? '3자리 반올림 후 전체 형상 일치' : relations[other.relationship] || display(other.relationship)];
         // A counterpart's overall status/coverage may describe its relationship
         // with a different pipe. Only this pair's evidence belongs in this list.
         if (other.accepted === false) parts.push('채택되지 않음');
@@ -107,7 +126,7 @@
       if (sourceFid != null) body.source_fid = sourceFid;
       if (offset > 0) body.offset = offset;
       try {
-        const response = await fetch(base + 'comparison/water/lookup', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal: currentController.signal});
+        const response = await fetch(base + `comparison/${sewer(item) ? 'sewer' : 'water'}/lookup`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal: currentController.signal});
         const data = await response.json();
         if (!valid(token, item)) return;
         if (!response.ok || data.available !== true) {

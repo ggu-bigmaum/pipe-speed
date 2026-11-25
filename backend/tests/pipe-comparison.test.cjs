@@ -16,6 +16,22 @@ class Element {
 }
 const ids = ['pipeComparison', 'pipeComparisonMessage', 'pipeSourcePicker', 'pipeSources', 'pipeComparisonResult', 'pipeComparisonStatus', 'pipeComparisonMeaning', 'pipeComparisonFacts', 'pipeComparisonReason', 'pipeComparisonEvidenceValues', 'pipeCounterpartsHeading', 'pipeCounterparts', 'pipeCounterpartsMore', 'pipeComparisonRetry'];
 const flush = async () => { for (let i = 0; i < 4; i++) await new Promise(setImmediate); };
+test('sewer uses retained id and shows rounded evidence without assigning MATCH', async () => {
+  const {ui, elements:e, requests}=fixture();
+  ui.show(item('sb001',{id:12,IDN:'S1',geometry:{large:true}}));
+  assert.match(requests[0].url,/comparison\/sewer\/lookup$/);
+  assert.deepEqual(requests[0].body.properties,{id:12});
+  const body=result(); body.pipe.comparison_status=null;body.pipe.rounded_geometry_match=true;body.pipe.precision_review=false;
+  body.counterparts={items:[{source_fid:5,original_id:'K5',relationship:'rounded_geometry'}],total:1,next_offset:null};
+  requests[0].resolve(body);await flush();
+  assert.equal(e.pipeComparisonStatus.textContent,'형상 일치');
+  assert.match(e.pipeComparisonFacts.textContent,/3자리 반올림/);
+  assert.match(e.pipeCounterparts.textContent,/건기연.*K5/);
+  assert.doesNotMatch(e.pipeComparisonStatus.textContent,/MATCH/);
+  ui.show(item('kict_sewer_seoul',{id:3})); body.pipe.rounded_geometry_match=null;body.pipe.precision_review=true;
+  requests[1].resolve(body);await flush();
+  assert.match(e.pipeComparisonStatus.textContent,/확인 필요/);
+});
 function fixture() {
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   const requests = [];
@@ -98,7 +114,7 @@ test('counterpart paging appends all relations and uses the explicitly chosen or
 
 test('unsupported layers, unavailability and request failure never become NOT_COMPARED', async () => {
   const {ui, elements: e, requests} = fixture();
-  ui.show(item('sb001')); assert.equal(requests.length, 0); assert.match(e.pipeComparisonMessage.textContent, /연결되지/);
+  ui.show(item('kict_sewer_national')); assert.equal(requests.length, 0); assert.match(e.pipeComparisonMessage.textContent, /연결되지/);
   ui.show(item()); requests[0].resolve({available: false, reason: '자료 연결 대기'}); await flush();
   assert.match(e.pipeComparisonMessage.textContent, /자료 연결 대기/); assert.equal(e.pipeComparisonResult.hidden, true);
   ui.show(item()); requests[1].reject(new Error('offline')); await flush();
