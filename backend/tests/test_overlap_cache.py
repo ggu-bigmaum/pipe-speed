@@ -24,12 +24,16 @@ def test_kict_water_requires_a_drawable_exact_counterpart(setup):
     path = data/'tiles_national/kict_national/11/1746/793.pbf'
     path.parent.mkdir(parents=True); path.write_bytes(kict_water_tile([100,7,9]))
     service = ComparisonTileSidecars(data,ComparisonPackage(fixture.directory),layer='kict_national')
+    write_tile(data,[attrs('S3')],z=11,x=1746,y=793)
     # The S1 group includes a non-strict duplicate, so do not hide KICT 100.
     assert service.get(11,1746,793)['matched_count'] == 0
     with sqlite3.connect(fixture.path) as db:
         db.execute('UPDATE relations SET whole_geometry_equal=1,same_original_id=1 WHERE kict_fid=101 AND seoul_fid=3')
     fixture.finish()
     assert base64.b64decode(service.get(11,1746,793)['bits_base64']) == b'\x01'
+    # Removing the actual counterpart from this tile must restore the KICT line.
+    write_tile(data,[attrs('S2')],z=11,x=1746,y=793)
+    assert service.get(11,1746,793)['matched_count'] == 0
 
 
 def test_national_mbtiles_uses_same_xyz_rows_as_tile_server(setup):
@@ -65,11 +69,15 @@ def test_kict_sewer_flags_use_the_kict_keys(tmp_path):
     package = StrictPackage(tmp_path / 'rules.sqlite')
     with sqlite3.connect(package.path) as db:
         db.executemany('INSERT INTO tile_groups VALUES(?,?,?)', [('kict','["1"]',0),('kict','["2"]',1)])
+        db.execute('CREATE TABLE pairs(kict_id INTEGER,seoul_id INTEGER)')
+        db.execute('INSERT INTO pairs VALUES(2,1)')
     from comparison_mvt import _fields
     layer = bytes(next(_fields(memoryview(sewer_tile([1,2]))))[2])
     raw = field(3, layer.replace(field(1,b'sb001'), field(1,b'kict_sewer_seoul')))
     path = tmp_path/'tiles_full/kict_sewer_seoul/12/3492/1586.pbf'
     path.parent.mkdir(parents=True); path.write_bytes(gzip.compress(raw))
+    peer_path = tmp_path/'tiles_full/sb001/12/3492/1586.pbf'
+    peer_path.parent.mkdir(parents=True); peer_path.write_bytes(sewer_tile([1]))
     service = ComparisonTileSidecars(tmp_path, package, comparison='sewer', layer='kict_sewer_seoul')
     result = service.get(12,3492,1586)
     assert result['layer'] == 'kict_sewer_seoul'

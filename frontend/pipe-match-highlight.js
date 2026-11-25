@@ -33,7 +33,7 @@
     let version = null, metadataRequest = null, metadataError = false, redrawPending = false, emitted = '';
     let highlightLabel = 'ID·전체 선형 완전일치', description = '원본 ID와 전체 선형이 모두 같은 관로입니다.', message = '';
     let raisedLayer = null, originalLayerZ;
-    const municipalReady = new Set(), hiddenStyle = [];
+    const municipalReady = new Map(), hiddenStyle = [];
     const enabled = () => members.length === 2 && members[0].checkbox.checked && members[0].layer?.getVisible() && members[1].checkbox.checked && members[1].layer?.getVisible();
     const currentGeneration = descriptor => descriptor.generation === (descriptor.entry.generation || 0);
     const proved = descriptor => version != null && descriptor.version === version && descriptor.bits != null;
@@ -56,7 +56,7 @@
     }
     function emit() {
       municipalReady.clear();
-      for (const d of registry.values()) if (d.entry.id === pair.target && needed(d) && proved(d)) municipalReady.add(d.coordinateKey);
+      for (const d of registry.values()) if (d.entry.id === pair.target && needed(d) && proved(d)) municipalReady.set(d.coordinateKey,d.sha);
       const value = state(), signature = JSON.stringify(value);
       if (signature !== emitted) { emitted = signature; onStateChange?.(value); }
     }
@@ -115,6 +115,7 @@
         const bits = validate(data, descriptor, job.version);
         if (!validJob(job)) return;
         descriptor.bits = bits; descriptor.version = job.version; descriptor.matchedCount = data.matched_count; descriptor.failedActivation = null;
+        descriptor.peerSha = data.counterpart_sha256;
         redraw();
       } catch (_) {
         // An intentionally aborted/offscreen job must not turn the next view into an error.
@@ -219,7 +220,7 @@
       const ordinal = feature[originalOrdinal];
       if (!(descriptor.bits[ordinal >> 3] & (1 << (ordinal & 7)))) return baseStyle;
       // Keep the original until the municipal tile is proved and drawable.
-      if (entry.id !== pair.target) return municipalReady.has(descriptor.coordinateKey) ? hiddenStyle : baseStyle;
+      if (entry.id !== pair.target) return descriptor.peerSha && municipalReady.get(descriptor.coordinateKey) === descriptor.peerSha ? hiddenStyle : baseStyle;
       const near = Number.isFinite(resolution) && resolution <= 20, batch = baseStyle.getZIndex?.() || 0, cache = styles[near ? 1 : 0];
       let cached = cache.get(batch);
       if (!cached) {

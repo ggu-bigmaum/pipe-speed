@@ -247,7 +247,7 @@ test('both pairs hide the KICT duplicate only after the same municipal tile is v
     assert.equal(f.requests.length,2);
     const kr=f.requests.find(r=>r.url.includes('/tiles/'+left+'/'));
     const sr=f.requests.find(r=>r.url.includes('/tiles/'+right+'/'));
-    kr.resolve(f.reply(k,1,{version:left.includes('sewer')?'sewer-v1':'v1'})); await flush();
+    kr.resolve(f.reply(k,1,{version:left.includes('sewer')?'sewer-v1':'v1',counterpart_sha256:s.sha})); await flush();
     assert.equal(f.service.style(k.features[0],k.entry,f.base,100),f.base,'keep original until counterpart is ready');
     sr.resolve(f.reply(s)); await flush();
     assert.equal(f.service.style(k.features[0],k.entry,f.base,100).length,0,'matched KICT is not drawn');
@@ -258,4 +258,15 @@ test('both pairs hide the KICT duplicate only after the same municipal tile is v
     f.setLayers([left]); assert.equal(f.service.style(k.features[0],k.entry,f.base,100),f.base);
     f.setLayers([right]); assert.equal(f.service.style(s.features[0],s.entry,f.base,100),f.base);
   }
+});
+
+test('a changed municipal tile never suppresses the KICT original using stale counterpart proof', async () => {
+  const f=fixture({allPairs:true}), k=f.tile(0,2,'kict_national'), s=f.tile(0,2,'sa001');
+  f.setLayers(['kict_national','sa001']); await flush();
+  f.requests.find(r=>r.url.includes('/tiles/kict_national/')).resolve(
+    f.reply(k,1,{counterpart_sha256:'stale-municipal-sha'}));
+  f.requests.find(r=>r.url.includes('/tiles/sa001/')).resolve(f.reply(s));
+  await flush();
+  assert.equal(f.service.style(k.features[0],k.entry,f.base,100),f.base);
+  assert.equal(f.service.style(s.features[0],s.entry,f.base,100)[0].getStroke().color,'#17212f');
 });

@@ -1,4 +1,4 @@
-"""Small strict-match bitsets for unchanged Seoul water vector tiles.
+"""Persistent strict-match bitsets for unchanged water and sewer vector tiles.
 
 Only original MVT attributes are decoded. Full-source comparison decisions
 already exist in the verified package; tile geometry never decides equality.
@@ -87,6 +87,19 @@ class ComparisonTileSidecars:
         stat = path.stat()
         return str(path), stat.st_size, stat.st_mtime_ns
 
+    def _peer_path(self, coord):
+        if self.dataset != 'kict':
+            return None
+        peer = ComparisonTileSidecars(self.data, self.package, comparison=self.comparison)
+        try:
+            return peer._path(*coord)
+        except MissingTile:
+            return None
+
+    def _peer_signature(self, coord):
+        path = self._peer_path(coord)
+        return self._fingerprint(path) if path else None
+
     def _cached(self, key):
         with self._cache_lock:
             if key not in self._cache:
@@ -126,6 +139,18 @@ class ComparisonTileSidecars:
             raise ValueError('Tile changed beyond comparison size limit')
         tile = read_attribute_tile(data, self.layer, max_bytes=MAX_TILE_BYTES)
         del data
+        peer_keys, peer_sha = set(), None
+        if self.dataset == 'kict':
+            coord = tile_coord or (int(path.parent.parent.name),int(path.parent.name),int(path.stem))
+            peer_path = self._peer_path(coord)
+            if peer_path:
+                with peer_path.open('rb') as source:
+                    peer_data = source.read(MAX_TILE_BYTES + 1)
+                peer = read_attribute_tile(peer_data, 'sa001' if self.comparison == 'water' else 'sb001', max_bytes=MAX_TILE_BYTES)
+                del peer_data
+                peer_keys = {self.key_function('seoul', props) for _,props in peer.features()}
+                peer_sha = peer.sha256
+                del peer
         bits, batch = bytearray(), []
         feature_count = matched_count = 0
         with self.package.connect() as connection:
@@ -142,14 +167,32 @@ class ComparisonTileSidecars:
                     strict_keys = [key for key, flag in flags.items() if flag]
                     if strict_keys:
                         marks = ','.join('?' for _ in strict_keys)
-                        unsafe = connection.execute(f'''SELECT DISTINCT k.tile_key FROM pipes k
-                            WHERE k.dataset='kict' AND k.tile_key IN ({marks}) AND NOT EXISTS (
-                              SELECT 1 FROM relations r JOIN pipes s ON s.dataset='seoul' AND s.source_fid=r.seoul_fid
-                              JOIN tile_groups g ON g.dataset='seoul' AND g.tile_key=s.tile_key AND g.all_strict=1
-                              WHERE r.kict_fid=k.source_fid AND r.whole_geometry_equal=1 AND r.same_original_id=1
-                            )''', strict_keys)
-                        for row in unsafe:
-                            flags[row[0]] = 0
+                        expected = {row['tile_key']:row['member_count'] for row in connection.execute(
+                            f"SELECT tile_key,member_count FROM tile_groups WHERE dataset='kict' AND tile_key IN ({marks})",strict_keys)}
+                        present = {key:set() for key in strict_keys}
+                        # Preserve the indexed tile-key -> relation -> peer order.
+                        # Otherwise SQLite can start with every municipal pipe.
+                        rows = connection.execute(f'''SELECT k.tile_key,k.source_fid,s.tile_key AS peer_key FROM pipes k
+                              CROSS JOIN relations r ON r.kict_fid=k.source_fid AND r.whole_geometry_equal=1 AND r.same_original_id=1
+                              CROSS JOIN pipes s ON s.dataset='seoul' AND s.source_fid=r.seoul_fid
+                              CROSS JOIN tile_groups g ON g.dataset='seoul' AND g.tile_key=s.tile_key AND g.all_strict=1
+                              WHERE k.dataset='kict' AND k.tile_key IN ({marks})''', strict_keys)
+                        for row in rows:
+                            if row['peer_key'] in peer_keys:
+                                present[row['tile_key']].add(row['source_fid'])
+                        for key in strict_keys:
+                            flags[key] = int(len(present[key]) == expected[key])
+                elif self.dataset == 'kict':
+                    import json
+                    ids = {int(json.loads(key)[0]):key for key,flag in flags.items() if flag}
+                    present = set()
+                    if ids:
+                        marks = ','.join('?' for _ in ids)
+                        for row in connection.execute(f'SELECT kict_id,seoul_id FROM pairs WHERE kict_id IN ({marks})',list(ids)):
+                            if self.key_function('seoul',{'id':row['seoul_id']}) in peer_keys:
+                                present.add(row['kict_id'])
+                    for object_id,key in ids.items():
+                        flags[key] = int(object_id in present)
                 matches = 0
                 for ordinal, key in batch:
                     if flags[key]:
@@ -171,12 +214,12 @@ class ComparisonTileSidecars:
                 matched_count += flush()
         return dict(available=True, schema_version=1, version=version, layer=self.layer,
                     sha256=tile.sha256, feature_count=feature_count, matched_count=matched_count,
-                    bits_base64=base64.b64encode(bits).decode('ascii'))
+                    bits_base64=base64.b64encode(bits).decode('ascii'), counterpart_sha256=peer_sha)
 
     def get(self, z, x, y):
         info = self.package.verified()
         path = self._path(z, x, y)
-        key = (info['version'],) + self._fingerprint(path) + (z,x,y)
+        key = (info['version'],) + self._fingerprint(path) + (z,x,y,self._peer_signature((z,x,y)))
         cached = self._cached(key)
         if cached is not None:
             return cached
@@ -187,17 +230,21 @@ class ComparisonTileSidecars:
             info = self.package.verified()
             path = self._path(z, x, y)
             fingerprint = self._fingerprint(path)
-            key = (info['version'],) + fingerprint + (z,x,y)
+            peer_signature = self._peer_signature((z,x,y))
+            key = (info['version'],) + fingerprint + (z,x,y,peer_signature)
             cached = self._cached(key)
             if cached is not None:
                 return cached
             # Portable cache key: no absolute PC-specific paths.
+            peer_key = (str(Path(peer_signature[0]).relative_to(self.data)), *peer_signature[1:]) if peer_signature else None
             disk_key = ('single-display-v1', info['version'], str(path.relative_to(self.data)), *fingerprint[1:])
+            if self.dataset == 'kict':
+                disk_key = ('single-display-peer-v2', *disk_key[1:], peer_key)
             payload = self.disk.get(self.layer, (z,x,y), disk_key)
             built = payload is None
             if payload is None:
                 payload = self._build(path, info['version'], (z,x,y)) if path.suffix == '.mbtiles' else self._build(path, info['version'])
-            if fingerprint != self._fingerprint(path) or self.package.verified()['version'] != info['version']:
+            if fingerprint != self._fingerprint(path) or peer_signature != self._peer_signature((z,x,y)) or self.package.verified()['version'] != info['version']:
                 raise ValueError('Comparison inputs changed during sidecar construction')
             self._remember(key, payload)
             if built:
