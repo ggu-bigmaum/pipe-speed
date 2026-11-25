@@ -5,7 +5,7 @@
   // A single Canvas stroke for a million-feature MVT can silently draw nothing.
   // Split rendering instructions, retaining every feature and its coordinates.
   const FEATURES_PER_CANVAS_BATCH = 16384;
-  const COMPARE_MIN_ZOOM = 14;
+  const COMPARE_MIN_ZOOM = 12;
   const COMPARISON_PARTNER = new Map([
     ['kict_national', 'sa001'], ['sa001', 'kict_national'],
     ['kict_sewer_seoul', 'sb001'], ['sb001', 'kict_sewer_seoul']
