@@ -5,11 +5,39 @@
   // A single Canvas stroke for a million-feature MVT can silently draw nothing.
   // Split rendering instructions, retaining every feature and its coordinates.
   const FEATURES_PER_CANVAS_BATCH = 16384;
+  const COMPARE_MIN_ZOOM = 14;
+  const COMPARE_PAIRS = [['kict_national', 'sa001'], ['kict_sewer_seoul', 'sb001']];
   const canvasBatch = Symbol('canvasBatch');
   function create({map, view, config, tilesBase, onChange, onSelect, onRecord, highlight}) {
     const entries = [];
-    let pending, sequence = 0;
-    const selected = () => entries.filter(entry => entry.checkbox.checked && entry.layer);
+    let pending, sequence = 0, selectionOrder = 0;
+    const selected = () => entries.filter(entry => entry.checkbox.checked && entry.layer?.getVisible());
+    function releaseEntry(entry) {
+      entry.layer?.setVisible(false); entry.overlay?.setVisible(false);
+      if (!entry.source) return;
+      // Clear both source/render tile caches and invalidate late decode results.
+      entry.generation++;
+      for (const controller of entry.requests.values()) controller.abort('superseded');
+      entry.requests.clear(); entry.failedTiles.clear(); entry.retryTiles.clear(); entry.failed = false;
+      entry.source.refresh();
+    }
+    function syncZoomGate() {
+      const restricted = view.getZoom() < COMPARE_MIN_ZOOM;
+      for (const ids of COMPARE_PAIRS) {
+        const pair = ids.map(id => entries.find(e => e.id === id)).filter(Boolean);
+        const chosen = pair.filter(e => e.checkbox.checked).sort((a, b) => a.selectionOrder - b.selectionOrder);
+        if (restricted && chosen.length > 1) {
+          for (const entry of chosen.slice(1)) { entry.checkbox.checked = false; releaseEntry(entry); }
+        }
+        for (const entry of pair) {
+          if (!entry.ready) continue;
+          const blocked = restricted && !entry.checkbox.checked && pair.some(e => e !== entry && e.checkbox.checked);
+          entry.checkbox.disabled = blocked;
+          entry.note.textContent = blocked ? '확대하면 비교 가능 · 줌 14 이상' : entry.failed ? '타일 읽기 오류' : entry.readyNote;
+        }
+      }
+      highlight?.syncVisibility();
+    }
     const needed = (entry, tile) => {
       const coordinate = tile.getTileCoord(), grid = entry.source.getTileGrid();
       return coordinate[0] === grid.getZForResolution(view.getResolution(), 1) && ol.extent.intersects(grid.getTileCoordExtent(coordinate), view.calculateExtent(map.getSize()));
@@ -72,7 +100,7 @@
         }
       }
     }
-    function redraw() { cancelObsolete(); measure(); }
+    function redraw() { syncZoomGate(); cancelObsolete(); onChange(); measure(); }
     view.on('change:center', redraw); view.on('change:resolution', redraw);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && pending) { pending.cancel(); $('vectorMs').textContent = '—'; $('vectorState').textContent = '탭이 숨겨져 측정을 중단했습니다.'; }
@@ -94,8 +122,13 @@
       line.className = 'layer-line'; line.style.background = layer.color || '#4dabf7'; copy.append(title, note); row.append(checkbox, copy, line); $(layer.container || 'vectorList').append(row);
       const entry = {...layer, readyNote: '', color: layer.color || '#4dabf7', row, checkbox, note, source: null, layer: null, failed: false, generation: 0, tileGenerations: new WeakMap(), failedTiles: new Map(), retryTiles: new Map(), requests: new Map(), cancelledTiles: new WeakSet()}; entries.push(entry);
       checkbox.onchange = () => {
+        if (!entry.ready) return;
+        if (checkbox.checked) entry.selectionOrder = ++selectionOrder;
+        syncZoomGate();
         if (entry.failed && checkbox.checked) refresh(entry);
-        entry.layer.setVisible(checkbox.checked); entry.overlay?.setVisible(checkbox.checked); cancelObsolete(); highlight?.syncVisibility(); onChange(); onSelect(); measure();
+        if (checkbox.checked) { entry.layer.setVisible(true); entry.overlay?.setVisible(true); }
+        else if (entry.layer.getVisible()) releaseEntry(entry);
+        cancelObsolete(); syncZoomGate(); onChange(); onSelect(); measure();
       };
       (async () => {
         try {
@@ -121,6 +154,8 @@
             url: tilesBase + encodeURIComponent(tileId) + '/{z}/{x}/{y}.pbf',
             tileLoadFunction(tile, url) {
               tile.setLoader(async (extent, resolution, projection) => {
+                // A queued OL loader may run after a zoom gate or checkbox hide.
+                if (!entry.checkbox.checked || !entry.layer?.getVisible()) { tile.setFeatures([]); return; }
                 const controller = new AbortController(), timer = setTimeout(() => controller.abort('timeout'), 30000);
                 const generation = entry.generation; entry.tileGenerations.set(tile, generation);
                 entry.requests.set(tile, controller);
@@ -172,7 +207,7 @@
             map.addLayer(entry.overlay);
             entry.readyNote = '회색: 원본 · 주황: 추가 연결';
           }
-          map.addLayer(entry.layer); checkbox.disabled = false; note.textContent = entry.readyNote;
+          map.addLayer(entry.layer); entry.ready = true; checkbox.disabled = false; note.textContent = entry.readyNote; syncZoomGate();
         } catch (error) { row.classList.add('unavailable'); note.textContent = error.message; row.title = error.message; }
       })();
     }
