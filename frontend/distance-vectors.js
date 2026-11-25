@@ -5,7 +5,11 @@
   // A single Canvas stroke for a million-feature MVT can silently draw nothing.
   // Split rendering instructions, retaining every feature and its coordinates.
   const FEATURES_PER_CANVAS_BATCH = 16384;
-  const COMPARE_MIN_ZOOM = 12;
+  const COMPARE_MIN_ZOOM = 14;
+  const COMPARISON_PARTNER = new Map([
+    ['kict_national', 'sa001'], ['sa001', 'kict_national'],
+    ['kict_sewer_seoul', 'sb001'], ['sb001', 'kict_sewer_seoul']
+  ]);
   const canvasBatch = Symbol('canvasBatch');
   function create({map, view, config, tilesBase, onChange, onSelect, onRecord, highlight}) {
     const entries = [];
@@ -22,17 +26,21 @@
     }
     function syncZoomGate() {
       const restricted = view.getZoom() < COMPARE_MIN_ZOOM;
-      // Loading limits apply to all vector sources, independently of the two
-      // specific source pairs that are eligible for geometric match emphasis.
       const chosen = entries.filter(e => e.checkbox.checked).sort((a, b) => a.selectionOrder - b.selectionOrder);
-      if (restricted && chosen.length > 1) {
-        for (const entry of chosen.slice(1)) { entry.checkbox.checked = false; releaseEntry(entry); }
+      const anchor = chosen[0], partner = anchor && COMPARISON_PARTNER.get(anchor.id);
+      // Only the first source and its explicit counterpart may coexist.
+      // Unrelated and reference sources stay locked even at higher zooms.
+      for (const entry of chosen.slice(1)) {
+        if (restricted || entry.id !== partner) { entry.checkbox.checked = false; releaseEntry(entry); }
       }
       for (const entry of entries) {
         if (!entry.ready) continue;
-        const blocked = restricted && !entry.checkbox.checked && chosen.length > 0;
+        const other = anchor && entry !== anchor, isPartner = other && entry.id === partner;
+        const blocked = Boolean(other && (!isPartner || restricted));
         entry.checkbox.disabled = blocked;
-        entry.note.textContent = blocked ? '확대하면 추가 선택 가능 · 줌 12 이상' : entry.failed ? '타일 읽기 오류' : entry.readyNote;
+        entry.note.textContent = blocked
+          ? isPartner ? `확대하면 비교 가능 · 줌 ${COMPARE_MIN_ZOOM} 이상` : '다른 관로를 보려면 선택 해제'
+          : entry.failed ? '타일 읽기 오류' : entry.readyNote;
       }
       highlight?.syncVisibility();
     }

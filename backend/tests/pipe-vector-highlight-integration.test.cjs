@@ -23,7 +23,7 @@ async function fixture({count = 2, sewer = false, allLayers = false} = {}) {
   const requests = [], timers = [], hashPromises = [], layers = [], coords = [0, 0, 1, 1];
   const raw = new Uint8Array([1, 2, 3]).buffer;
   const features = Array.from({length: count}, () => ({getProperties: () => ({layer: 'sa001'}), getGeometry: () => ({getType: () => 'LineString'}), coordinates: coords}));
-  let zoom = 12;
+  let zoom = 14;
   const handlers = {};
   const view = {on(name, fn) { (handlers[name] ||= []).push(fn); }, getZoom: () => zoom, getResolution: () => 100, calculateExtent: () => [0, 0, 100, 100]};
   const map = {getView: () => view, getSize: () => [800, 600], on() {}, un() {}, render() {}, addLayer: layer => layers.push(layer)};
@@ -58,19 +58,19 @@ async function fixture({count = 2, sewer = false, allLayers = false} = {}) {
   return {catalog, highlight, entry, features, coords, tile, load, body, requests, set, setZoom, flush, timers};
 }
 
-for (const sewer of [false, true]) test(`${sewer ? 'sewer' : 'water'} pair requires zoom 12 and releases second selection on zoom out`, async () => {
+for (const sewer of [false, true]) test(`${sewer ? 'sewer' : 'water'} pair requires zoom 14 and releases second selection on zoom out`, async () => {
   const f = await fixture({sewer}), first = f.catalog.entries[0], second = f.entry;
-  f.setZoom(11); f.set(first, true);
+  f.setZoom(13); f.set(first, true);
   assert.equal(second.checkbox.disabled, true);
-  assert.match(second.note.textContent, /12/);
+  assert.match(second.note.textContent, /14/);
   f.set(second, true); // Even a queued change event cannot bypass the gate.
   assert.equal(second.checkbox.checked, false);
   assert.equal(second.layer.getVisible(), false);
-  f.setZoom(12); assert.equal(second.checkbox.disabled, false);
+  f.setZoom(14); assert.equal(second.checkbox.disabled, false);
   f.set(second, true); assert.equal(second.layer.getVisible(), true);
   const controller = new AbortController(); second.requests.set(f.tile, controller);
   const generation = second.generation;
-  f.setZoom(11.99);
+  f.setZoom(13.99);
   assert.equal(first.layer.getVisible(), true);
   assert.equal(second.checkbox.checked, false);
   assert.equal(second.layer.getVisible(), false);
@@ -78,13 +78,13 @@ for (const sewer of [false, true]) test(`${sewer ? 'sewer' : 'water'} pair requi
   assert.ok(second.generation > generation);
   assert.equal(second.source.refreshed, true);
   assert.equal(f.highlight.state().active, false);
-  f.setZoom(12); assert.equal(second.checkbox.disabled, false);
+  f.setZoom(14); assert.equal(second.checkbox.disabled, false);
   assert.equal(second.checkbox.checked, false, 'zooming in never silently reloads a second layer');
 });
 
 test('first selected source is retained even when municipal source was selected first', async () => {
   const f = await fixture(), kict = f.catalog.entries[0];
-  f.set(f.entry, true); f.set(kict, true); f.setZoom(11);
+  f.set(f.entry, true); f.set(kict, true); f.setZoom(13);
   assert.equal(f.entry.layer.getVisible(), true);
   assert.equal(kict.checkbox.checked, false);
   f.set(f.entry, false); assert.equal(kict.checkbox.disabled, false);
@@ -92,38 +92,56 @@ test('first selected source is retained even when municipal source was selected 
 
 test('an already queued loader does not decode or install a hidden comparison layer', async () => {
   const f = await fixture();
-  f.set(f.catalog.entries[0], true); f.set(f.entry, true); f.setZoom(11);
+  f.set(f.catalog.entries[0], true); f.set(f.entry, true); f.setZoom(13);
   await f.load();
   assert.equal(f.tile.features.length, 0);
   assert.equal(f.tile.symbolsBeforeInstall, 0);
   assert.equal(f.requests.length, 0);
 });
 
-test('every first vector blocks every other vector below 12, including mixed and reference sources', async () => {
+test('each first vector unlocks only its designated counterpart at zoom 14 and never a third source', async () => {
+  const partners = {kict_national: 'sa001', sa001: 'kict_national', kict_sewer_seoul: 'sb001', sb001: 'kict_sewer_seoul'};
   for (let firstIndex = 0; firstIndex < 6; firstIndex++) {
     const f = await fixture({allLayers: true});
-    f.setZoom(11.99);
+    f.setZoom(13.99);
     const first = f.catalog.entries[firstIndex];
     f.set(first, true);
     for (const entry of f.catalog.entries) {
       assert.equal(entry.checkbox.disabled, entry !== first, `${first.id} -> ${entry.id}`);
     }
-    f.setZoom(12);
+    f.setZoom(14);
     for (const entry of f.catalog.entries) {
-      assert.equal(entry.checkbox.disabled, false);
-      if (entry !== first) f.set(entry, true);
+      const allowed = entry === first || entry.id === partners[first.id];
+      assert.equal(entry.checkbox.disabled, !allowed, `${first.id} -> ${entry.id}`);
+      if (entry !== first) {
+        f.set(entry, true); // Simulate a stale/queued event even for disabled controls.
+        assert.equal(entry.checkbox.checked, allowed);
+      }
     }
-    assert.equal(f.catalog.selected().length, 6);
-    f.setZoom(11.99);
+    assert.equal(f.catalog.selected().length, partners[first.id] ? 2 : 1);
+    f.setZoom(20);
+    for (const entry of f.catalog.entries) assert.equal(entry.checkbox.disabled, entry !== first && entry.id !== partners[first.id]);
+    f.setZoom(13.99);
     assert.equal(f.catalog.selected().length, 1);
     assert.equal(f.catalog.selected()[0], first);
-    for (const entry of f.catalog.entries.filter(e => e !== first)) {
+    for (const entry of f.catalog.entries.filter(e => e.id === partners[first.id])) {
       assert.equal(entry.source.refreshed, true);
       assert.equal(entry.layer.getVisible(), false);
     }
     f.set(first, false);
     assert.ok(f.catalog.entries.every(entry => !entry.checkbox.disabled));
   }
+});
+
+test('deselecting the first pipe keeps its selected counterpart as the new anchor', async () => {
+  const f = await fixture({allLayers: true});
+  const [kict, seoul, sewer] = f.catalog.entries;
+  f.set(kict, true); f.set(seoul, true); f.set(kict, false);
+  assert.equal(seoul.layer.getVisible(), true);
+  assert.equal(kict.checkbox.disabled, false);
+  assert.equal(sewer.checkbox.disabled, true);
+  f.set(seoul, false);
+  assert.ok(f.catalog.entries.every(e => !e.checkbox.disabled));
 });
 
 test('catalog installs ordinal metadata before base features and adds navy emphasis only after pair proof', async () => {
