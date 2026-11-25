@@ -70,11 +70,14 @@ def _mb_conn():
 
 app = Flask(__name__)
 from distance import create_distance_blueprint
+from national_distance import create_national_distance_blueprint
+from national_tiles import create_national_sewer_tiles_blueprint, LAYER as NATIONAL_SEWER_LAYER
 app.register_blueprint(create_distance_blueprint(ROOT / 'data' / 'distance' / 'kict_water_seoul'))
 app.register_blueprint(create_distance_blueprint(
     ROOT / 'data' / 'distance' / 'kict_sewer_seoul', name='distance_sewer',
     url_prefix='/distance/kict_sewer_seoul', dataset_id='kict_sewer_seoul',
     label='건기연 하수(서울·보정본)', result_filename='pipe_dist_result.csv'))
+app.register_blueprint(create_national_distance_blueprint(ROOT / 'data' / 'distance'))
 CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)
@@ -85,6 +88,10 @@ if _log_f.tell() == 0:
 def log_req(path, status, nbytes, ms, note=""):
     with _log_lock:
         _log_f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')},{request.method},{path},{status},{nbytes},{ms:.3f},{note}\n")
+
+
+app.register_blueprint(create_national_sewer_tiles_blueprint(
+    ROOT / 'data' / 'tiles_sewer_national', TILES_FULL / 'kict_sewer_seoul', log_req))
 
 
 def _zoom_dirs(layer):
@@ -154,7 +161,7 @@ def _meta(layer):
 
 @app.get("/health")
 def health():
-    return jsonify(ok=True, pid=os.getpid(), layers=list(LAYERS) + [NAT_LAYER],
+    return jsonify(ok=True, pid=os.getpid(), layers=list(LAYERS) + [NAT_LAYER, NATIONAL_SEWER_LAYER],
                    tile_source=("mbtiles" if USE_MBTILES else "file"),
                    mbtiles_present=NATIONAL_MBTILES.is_file())
 

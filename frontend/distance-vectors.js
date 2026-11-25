@@ -18,7 +18,7 @@
       entry.generation++;
       for (const controller of entry.requests.values()) controller.abort('superseded');
       entry.failed = false; entry.failedTiles.clear(); entry.retryTiles.clear();
-      entry.source.refresh(); entry.note.textContent = '벡터타일';
+      entry.source.refresh(); entry.note.textContent = entry.readyNote;
     }
     const updateTarget = () => {
       const items = selected();
@@ -29,7 +29,7 @@
       pending?.cancel();
       const items = selected(); updateTarget();
       if (!items.length || document.hidden) { $('vectorMs').textContent = '—'; $('vectorState').textContent = ''; return; }
-      for (const entry of items) { entry.failed = [...entry.failedTiles.values()].some(tile => needed(entry, tile)); if (!entry.failed) entry.note.textContent = '벡터타일'; }
+      for (const entry of items) { entry.failed = [...entry.failedTiles.values()].some(tile => needed(entry, tile)); if (!entry.failed) entry.note.textContent = entry.readyNote; }
       if (items.some(e => e.failed)) { $('vectorMs').textContent = '—'; $('vectorState').textContent = '타일을 읽지 못했습니다. 다시 읽기를 눌러 주세요.'; return; }
       const token = ++sequence, started = performance.now();
       let done = false, timer;
@@ -87,7 +87,7 @@
       row.className = 'layer-row'; checkbox.type = 'checkbox'; checkbox.disabled = true; checkbox.id = 'vector-' + layer.id;
       copy.className = 'layer-copy'; title.textContent = layer.label; note.textContent = '자료 확인 중…';
       line.className = 'layer-line'; line.style.background = layer.color || '#4dabf7'; copy.append(title, note); row.append(checkbox, copy, line); $('vectorList').append(row);
-      const entry = {...layer, color: layer.color || '#4dabf7', row, checkbox, note, source: null, layer: null, failed: false, generation: 0, tileGenerations: new WeakMap(), failedTiles: new Map(), retryTiles: new Map(), requests: new Map(), cancelledTiles: new WeakSet()}; entries.push(entry);
+      const entry = {...layer, readyNote: layer.note || '벡터타일', color: layer.color || '#4dabf7', row, checkbox, note, source: null, layer: null, failed: false, generation: 0, tileGenerations: new WeakMap(), failedTiles: new Map(), retryTiles: new Map(), requests: new Map(), cancelledTiles: new WeakSet()}; entries.push(entry);
       checkbox.onchange = () => {
         if (entry.failed && checkbox.checked) refresh(entry);
         entry.layer.setVisible(checkbox.checked); cancelObsolete(); onChange(); onSelect(); measure();
@@ -97,8 +97,12 @@
           const response = await fetch(tilesBase + encodeURIComponent(entry.id) + '/meta.json', {cache: 'no-store', signal: AbortSignal.timeout(10000)});
           if (!response.ok) throw new Error(response.status === 404 ? '자료 없음 · 서버 데이터 연결 필요' : '자료 확인 실패');
           const meta = await response.json();
+          if (meta.complete === false) throw new Error(`설치 미완료 · ${meta.missing_regions?.length || '일부'}개 지역 자료 확인 필요`);
           if (!Number.isInteger(meta.minzoom) || !Number.isInteger(meta.maxzoom) || meta.maxzoom < meta.minzoom) throw new Error('타일 정보 확인 필요');
-          const format = new ol.format.MVT({layers: [meta.vector_layer_id || entry.id]});
+          const layerIds = meta.vector_layer_ids || [meta.vector_layer_id || entry.id];
+          if (!Array.isArray(layerIds) || !layerIds.length || layerIds.some(id => typeof id !== 'string' || !id)) throw new Error('타일 레이어 정보 확인 필요');
+          const format = new ol.format.MVT({layers: layerIds});
+          entry.format = format;
           const styles = [];
           const stroke = new ol.style.Stroke({color: entry.color, width: 1.8});
           const featureStyle = feature => {
@@ -145,7 +149,7 @@
           });
           entry.source = source;
           entry.layer = new ol.layer.VectorTile({source, visible: false, zIndex: 10, style: featureStyle});
-          map.addLayer(entry.layer); checkbox.disabled = false; note.textContent = '벡터타일';
+          map.addLayer(entry.layer); checkbox.disabled = false; note.textContent = entry.readyNote;
         } catch (error) { row.classList.add('unavailable'); note.textContent = error.message; row.title = error.message; }
       })();
     }

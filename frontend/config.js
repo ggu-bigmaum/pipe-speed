@@ -5,6 +5,7 @@ window.APP_CONFIG = {
   // 타일 파일은 backend/data 아래에 별도 배치한다. 데이터가 없으면 선택칸이 비활성화된다.
   LAYERS: [
     { id: 'kict_national', label: '건기연 상수관망', color: '#4dabf7' },
+    { id: 'kict_sewer_national', label: '건기연 하수(전국·보정본)', note: '서울 포함 · 전남 제외', color: '#168574' },
     { id: 'sa001', label: '서울시 상수관망', color: '#df7c24' },
     { id: 'kict_sewer_seoul', label: '건기연 하수(서울·보정본)', color: '#168574' },
     { id: 'sb001', label: '서울시 하수관망', color: '#9355b5' }

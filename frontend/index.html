@@ -10,18 +10,31 @@
   <div class="brand"><span class="brand-icon" aria-hidden="true">▱</span><div><h1>관망 지도</h1><p>PIPE · 레이어 선택</p></div><button id="closeLayers" class="icon mobile-only" aria-label="레이어 목록 닫기">×</button></div>
   <div class="catalog-heading"><h2>레이어</h2><span id="layerCount" class="count">5</span></div>
   <details class="layer-group" open><summary><span>벡터타일</span><span id="vectorCount" class="count">1</span></summary><div id="vectorList"></div></details>
-  <details class="layer-group" open><summary><span>TIF · 건기연 상수(서울)</span><span class="count">2</span></summary>
+  <details class="layer-group national-group" id="nationalWaterGroup" open><summary><span>TIF · 건기연 상수(전국)</span><span class="count">2</span></summary>
+    <label class="region-picker" for="nationalWaterRegion">지역<select id="nationalWaterRegion" disabled><option>자료 확인 중…</option></select></label>
+    <p id="nationalWaterNote" class="group-caption" role="status">서울 포함 17개 시도 · 전국 산출본</p>
+    <label class="layer-row"><input id="nationalWaterCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
+    <label class="layer-row"><input id="nationalWaterCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+  </details>
+  <details class="layer-group national-group" id="nationalSewerGroup" open><summary><span>TIF · 건기연 하수(전국·보정본)</span><span class="count">2</span></summary>
+    <label class="region-picker" for="nationalSewerRegion">지역<select id="nationalSewerRegion" disabled><option>자료 확인 중…</option></select></label>
+    <p id="nationalSewerNote" class="group-caption" role="status">서울 포함 · 전남 자료 없음</p>
+    <label class="layer-row"><input id="nationalSewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
+    <label class="layer-row"><input id="nationalSewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
+  </details>
+  <details class="layer-group" open><summary><span>TIF · 건기연 상수(기존 서울)</span><span class="count">2</span></summary>
+    <p class="group-caption">기존 서울 기준 자료 · 전국 산출본과 별도</p>
     <label class="layer-row"><input id="case1" data-raster type="checkbox" checked disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
     <label class="layer-row"><input id="case2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
   </details>
-  <details class="layer-group" open><summary><span>TIF · 건기연 하수(서울·보정본)</span><span class="count">2</span></summary>
+  <details class="layer-group" open><summary><span>TIF · 건기연 하수(기존 서울·보정본)</span><span class="count">2</span></summary>
     <label class="layer-row"><input id="sewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 1</strong><small>격자 중심 → 최근접 관로</small></span></label>
     <label class="layer-row"><input id="sewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>거리 Case 2</strong><small>관로 통과 격자는 거리 0</small></span></label>
   </details>
 </aside>
 <main id="mapArea" aria-label="관망 지도">
   <div id="base" aria-hidden="true"></div><div id="map" aria-label="거리 래스터 지도"></div><div id="vectorMap" aria-hidden="true"></div>
-  <div class="map-toolbar"><button id="toggleLayers" class="mobile-only" aria-expanded="false" aria-controls="layerSidebar">☰ 레이어</button><button id="fit" disabled>서울 전체 보기</button><span id="status" role="status" aria-live="polite">자료 확인 중…</span></div>
+  <div class="map-toolbar"><button id="toggleLayers" class="mobile-only" aria-expanded="false" aria-controls="layerSidebar">☰ 레이어</button><button id="fit" disabled>선택 지역 보기</button><span id="status" role="status" aria-live="polite">자료 확인 중…</span></div>
   <section id="detailPanel" class="floating-card" aria-labelledby="detailTitle" hidden>
     <div class="card-heading"><h2 id="detailTitle">선택한 격자</h2><button id="closeDetails" class="icon" aria-label="격자 정보 닫기">×</button></div>
     <div class="card-body"><p id="pickMessage" aria-live="polite">지도에서 격자를 클릭하세요.</p>
@@ -49,7 +62,7 @@
     </details>
     <details id="legendPanel" class="floating-card" open>
       <summary class="card-heading"><h2>범례</h2><span class="chevron" aria-hidden="true">⌃</span></summary>
-      <div class="card-body"><div id="vectorLegend"></div><div id="rasterLegend"><div class="legend-heading"><strong id="legendCase">거리 Case 1</strong><span>단위 m</span></div><div id="legend" class="legend" aria-label="거리 범례"></div><label class="slider">불투명도 <input id="opacity" type="range" min="10" max="100" value="90"><output id="opacityValue">90%</output></label><button id="editStyle" class="wide">색상·거리 구간 설정</button></div><p id="emptyLegend" class="hint" hidden>표시 중인 레이어가 없습니다.</p></div>
+      <div class="card-body"><div id="vectorLegend"></div><div id="rasterLegend"><div class="legend-heading"><strong id="legendCase">거리 Case 1</strong><span>단위 m</span></div><div id="legend" class="legend" aria-label="거리 범례"></div><p id="gridHint" class="hint" role="status" hidden></p><label class="slider">불투명도 <input id="opacity" type="range" min="10" max="100" value="90"><output id="opacityValue">90%</output></label><button id="editStyle" class="wide">색상·거리 구간 설정</button></div><p id="emptyLegend" class="hint" hidden>표시 중인 레이어가 없습니다.</p></div>
     </details>
   </div>
   <span id="baseLabel">배경지도 준비 중</span>
