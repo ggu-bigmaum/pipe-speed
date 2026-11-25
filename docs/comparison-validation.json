@@ -1,0 +1,269 @@
+{
+  "status": "complete",
+  "schema_version": 1,
+  "rule_version": "seoul-water-evidence-v1-20261125",
+  "generated_at": "2026-11-25T11:49:30.782972+00:00",
+  "scope": "KICT national water versus supplied Seoul municipal water. Municipal input unavailable outside Seoul source region 11.",
+  "geometry_policy": "No source geometry edited. Historical sustained lengths/ranges are Seoul-boundary-clipped; strict flags use full original equality.",
+  "length_scope": "pipes.length_m and coverage_ratio are historical Seoul-boundary-clipped comparison metrics; NULL outside historical scope.",
+  "business_states": [
+    "MATCH",
+    "PARTIAL_MATCH",
+    "KICT_ONLY",
+    "LOCAL_ONLY",
+    "CONFLICT",
+    "NOT_COMPARED"
+  ],
+  "input_hashes": {
+    "baseline": "bed6b862c0aa7776d5b86b4cf9667aa0d3e0d30f6cc3669ecaaa831088f52091",
+    "mapping": "dc6270ceea7089169581b68130144cb5793c5ca7aadc0ff6319dbded7cc1bc5a",
+    "strict": "db52711d1434e2dd4f82449ab068e3d025b6446b31f0657e86e1927187a8ee9f",
+    "keys": "2e916845811b32d93363cfad2efdde555b5e812d70ba65e2d1d5646995c3339a",
+    "kict_source": "390b88b0fe3c0f8373dc6c6b0804a21ed45658ec6491a0b00e1d41066b3c376c"
+  },
+  "provenance": {
+    "verified": true,
+    "strict_artifact_sha256": "db52711d1434e2dd4f82449ab068e3d025b6446b31f0657e86e1927187a8ee9f",
+    "trusted_manifest_sha256": "ef3775e0a64ee4c12413c0ced410113bd0f043f73f6ffa6f5688c02a4c8d341d",
+    "sources": {
+      "kict": {
+        "path": "C:\\Users\\admin\\Desktop\\건기연상수관망\\건기연상수관망.gpkg",
+        "table": "_",
+        "fid": "fid",
+        "oid": "ORG_IDN",
+        "where": "path LIKE '%/1100000000/WTL_PIPE_LM.shp'",
+        "layer_id": "kict_national",
+        "count": 1445440,
+        "file_bytes": 2547621888,
+        "sha256": "390b88b0fe3c0f8373dc6c6b0804a21ed45658ec6491a0b00e1d41066b3c376c"
+      },
+      "seoul": {
+        "path": "C:\\Users\\admin\\Desktop\\빅마음\\04.기획\\00_작업안내\\YSY\\서울시 2개 레이어\\02_서울시_상수.gpkg",
+        "table": "pipes",
+        "fid": "gpkg_fid",
+        "oid": "PLINE_ID",
+        "where": "1=1",
+        "layer_id": "sa001",
+        "count": 1444804,
+        "file_bytes": 808038400,
+        "sha256": "581da066de7bda563d1cd85b0ece89d400d4ff14cef0175009f8c537b2a7eb03"
+      }
+    }
+  },
+  "inputs": {
+    "baseline": "C:\\Users\\admin\\Documents\\ChatGPT\\도미온\\outputs\\pipe_comparison_web_20261125\\audit\\baseline.sqlite",
+    "mapping": "C:\\Users\\admin\\Documents\\ChatGPT\\도미온\\outputs\\pipe_comparison_web_20261125\\audit\\source_mapping.sqlite",
+    "strict": "C:\\Users\\admin\\Documents\\ChatGPT\\도미온\\outputs\\pipe_compare_20261125\\pipe_comparison.sqlite",
+    "keys": "C:\\Users\\admin\\Documents\\ChatGPT\\도미온\\outputs\\pipe_comparison_web_20261125\\key_audit\\tile_keys.sqlite",
+    "kict_source": "C:\\Users\\admin\\Desktop\\건기연상수관망\\건기연상수관망.gpkg"
+  },
+  "source_manifest": {
+    "kict": {
+      "path": "C:\\Users\\admin\\Desktop\\건기연상수관망\\건기연상수관망.gpkg",
+      "table": "_",
+      "fid": "fid",
+      "oid": "ORG_IDN",
+      "where": "path LIKE '%/1100000000/WTL_PIPE_LM.shp'",
+      "layer_id": "kict_national",
+      "count": 1445440,
+      "file_bytes": 2547621888,
+      "sha256": "390b88b0fe3c0f8373dc6c6b0804a21ed45658ec6491a0b00e1d41066b3c376c"
+    },
+    "seoul": {
+      "path": "C:\\Users\\admin\\Desktop\\빅마음\\04.기획\\00_작업안내\\YSY\\서울시 2개 레이어\\02_서울시_상수.gpkg",
+      "table": "pipes",
+      "fid": "gpkg_fid",
+      "oid": "PLINE_ID",
+      "where": "1=1",
+      "layer_id": "sa001",
+      "count": 1444804,
+      "file_bytes": 808038400,
+      "sha256": "581da066de7bda563d1cd85b0ece89d400d4ff14cef0175009f8c537b2a7eb03"
+    }
+  },
+  "database_access": "none in builder; baseline was extracted using read-only PostgreSQL transactions",
+  "counts": {
+    "pipes": 5884851,
+    "relations": 1767410,
+    "tile_groups": 5805991
+  },
+  "per_dataset": [
+    {
+      "dataset": "kict",
+      "count": 4440047
+    },
+    {
+      "dataset": "seoul",
+      "count": 1444804
+    }
+  ],
+  "state_counts": [
+    {
+      "dataset": "kict",
+      "state": "CONFLICT",
+      "count": 18237
+    },
+    {
+      "dataset": "kict",
+      "state": "MATCH",
+      "count": 1419830
+    },
+    {
+      "dataset": "kict",
+      "state": "NOT_COMPARED",
+      "count": 2994607
+    },
+    {
+      "dataset": "kict",
+      "state": "PARTIAL_MATCH",
+      "count": 7373
+    },
+    {
+      "dataset": "seoul",
+      "state": "CONFLICT",
+      "count": 14846
+    },
+    {
+      "dataset": "seoul",
+      "state": "MATCH",
+      "count": 1422503
+    },
+    {
+      "dataset": "seoul",
+      "state": "PARTIAL_MATCH",
+      "count": 7455
+    }
+  ],
+  "reason_counts": [
+    {
+      "dataset": "kict",
+      "reason": "absence_unconfirmed",
+      "count": 4179
+    },
+    {
+      "dataset": "kict",
+      "reason": "boundary_scope_difference",
+      "count": 19
+    },
+    {
+      "dataset": "kict",
+      "reason": "competing_correspondence",
+      "count": 1569
+    },
+    {
+      "dataset": "kict",
+      "reason": "no_sustained_path",
+      "count": 8233
+    },
+    {
+      "dataset": "kict",
+      "reason": "reference_unavailable",
+      "count": 2994607
+    },
+    {
+      "dataset": "kict",
+      "reason": "regression_review",
+      "count": 1502
+    },
+    {
+      "dataset": "kict",
+      "reason": "same_id_different_path",
+      "count": 2735
+    },
+    {
+      "dataset": "kict",
+      "reason": "sustained_full",
+      "count": 15104
+    },
+    {
+      "dataset": "kict",
+      "reason": "sustained_partial",
+      "count": 7373
+    },
+    {
+      "dataset": "kict",
+      "reason": "whole_source_equal",
+      "count": 1404726
+    },
+    {
+      "dataset": "seoul",
+      "reason": "absence_unconfirmed",
+      "count": 801
+    },
+    {
+      "dataset": "seoul",
+      "reason": "boundary_scope_difference",
+      "count": 155
+    },
+    {
+      "dataset": "seoul",
+      "reason": "competing_correspondence",
+      "count": 1618
+    },
+    {
+      "dataset": "seoul",
+      "reason": "no_sustained_path",
+      "count": 7862
+    },
+    {
+      "dataset": "seoul",
+      "reason": "regression_review",
+      "count": 1689
+    },
+    {
+      "dataset": "seoul",
+      "reason": "same_id_different_path",
+      "count": 2721
+    },
+    {
+      "dataset": "seoul",
+      "reason": "sustained_full",
+      "count": 17771
+    },
+    {
+      "dataset": "seoul",
+      "reason": "sustained_partial",
+      "count": 7455
+    },
+    {
+      "dataset": "seoul",
+      "reason": "whole_source_equal",
+      "count": 1404732
+    }
+  ],
+  "strict_counts": [
+    {
+      "dataset": "kict",
+      "strict_pipes": 1404507,
+      "exact_pipes": 1404726
+    },
+    {
+      "dataset": "seoul",
+      "strict_pipes": 1404516,
+      "exact_pipes": 1404732
+    }
+  ],
+  "relation_sources": {
+    "exact_pairs": 1404307,
+    "sustained_pairs": 362337,
+    "id_pairs": 1426160,
+    "whole_exact_pairs": 1405070
+  },
+  "validation": {
+    "source_row_conservation": true,
+    "source_mapping_full_wkb_verified": true,
+    "relation_conservation": true,
+    "rejected_relations_preserved": true,
+    "strict_display_flag_separate": true,
+    "integrity_check": "ok",
+    "resumed_from_verified_pipe_checkpoint": true,
+    "provenance_verified": true,
+    "input_file_stats_unchanged": true
+  },
+  "output": {
+    "path": "C:\\Users\\admin\\Documents\\ChatGPT\\도미온\\outputs\\pipe_comparison_web_20261125\\package\\water_comparison.sqlite",
+    "bytes": 2061524992,
+    "sha256": "cd6186dfcc4f8131b782a5efa1b8dd34cbf45963d2cbf8a5c34f96c7efd18a9e"
+  },
+  "elapsed_seconds": 135.8
+}
