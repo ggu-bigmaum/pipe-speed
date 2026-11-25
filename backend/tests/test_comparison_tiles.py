@@ -203,7 +203,7 @@ def test_lru_does_not_retain_more_than_32_tile_payloads(setup, monkeypatch):
     assert client.get('/comparison/water/tiles/sa001/6/32/24').status_code == 200
     assert len(decoded) == 33
     assert client.get('/comparison/water/tiles/sa001/6/0/24').status_code == 200
-    assert len(decoded) == 34
+    assert len(decoded) == 33  # Evicted RAM entries are now reused from disk.
 
 
 def test_concurrent_decode_capacity_is_bounded(setup, monkeypatch):

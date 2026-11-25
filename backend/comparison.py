@@ -71,7 +71,11 @@ class ComparisonPackage:
 
     def _revision(self):
         data, manifest = self.path.stat(), self.manifest_path.stat()
-        return data.st_size, data.st_mtime_ns, manifest.st_size, manifest.st_mtime_ns
+        # Same-length manifest edits can share a timestamp on Windows. Read the
+        # small manifest so a building/replaced package never reuses old flags.
+        with self.manifest_path.open('rb') as source:
+            digest = hashlib.sha256(source.read(1024 * 1024 + 1)).hexdigest()
+        return data.st_size, data.st_mtime_ns, manifest.st_size, manifest.st_mtime_ns, digest
 
     def verified(self):
         with self._lock:

@@ -4,6 +4,7 @@ Only original MVT attributes are decoded. Full-source comparison decisions
 already exist in the verified package; tile geometry never decides equality.
 """
 import base64
+import os
 from collections import OrderedDict
 from pathlib import Path
 import sqlite3
@@ -15,6 +16,7 @@ from flask import Blueprint, jsonify
 from comparison import ComparisonPackage
 from comparison_keys import tile_key, sewer_tile_key
 from comparison_mvt import read_attribute_tile
+from comparison_cache import TileFlagCache
 
 MAX_TILE_BYTES = 256 * 1024 * 1024
 MAX_FEATURES = 4_000_000
@@ -33,13 +35,13 @@ class MissingTile(Exception):
     pass
 
 
-def _lookup_flags(connection, keys):
+def _lookup_flags(connection, keys, dataset='seoul'):
     unique = list(dict.fromkeys(keys))
     if not unique:
         return {}
     marks = ','.join('?' for _ in unique)
     rows = connection.execute(f'''SELECT tile_key,all_strict FROM tile_groups
-        WHERE dataset=? AND tile_key IN ({marks})''', ['seoul'] + unique)
+        WHERE dataset=? AND tile_key IN ({marks})''', [dataset] + unique)
     result = {row['tile_key']: row['all_strict'] for row in rows}
     if len(result) != len(unique) or any(value not in (0, 1) for value in result.values()):
         raise ValueError('Tile contains unknown or invalid comparison keys')
@@ -47,19 +49,32 @@ def _lookup_flags(connection, keys):
 
 
 class ComparisonTileSidecars:
-    def __init__(self, data_directory, package, *, comparison='water'):
+    def __init__(self, data_directory, package, *, comparison='water', layer=None):
         if comparison not in ('water', 'sewer'):
             raise ValueError('Unsupported comparison pair')
-        self.layer = 'sa001' if comparison == 'water' else 'sb001'
+        layers = ('kict_national', 'sa001') if comparison == 'water' else ('kict_sewer_seoul', 'sb001')
+        self.layer = layer or layers[1]
+        if self.layer not in layers:
+            raise ValueError('Unsupported comparison layer')
+        self.dataset = 'seoul' if self.layer == layers[1] else 'kict'
+        self.comparison = comparison
         self.key_function = tile_key if comparison == 'water' else sewer_tile_key
         self.data = Path(data_directory).resolve()
         self.package = package
+        self.disk = TileFlagCache(self.data / 'comparison' / comparison / 'tile_cache.sqlite')
         self._cache = OrderedDict()
         self._cache_bytes = 0
         self._cache_lock = threading.Lock()
         self._build_slot = threading.BoundedSemaphore(1)
 
     def _path(self, z, x, y):
+        if self.layer == 'kict_national':
+            mb = self.data / 'kict_national.mbtiles'
+            mode = os.environ.get('TILE_SOURCE', 'auto').lower()
+            path = mb if mode == 'mbtiles' or (mode == 'auto' and mb.is_file()) else self.data / 'tiles_national' / self.layer / str(z) / str(x) / (str(y) + '.pbf')
+            if not path.is_file():
+                raise MissingTile()
+            return path
         full = self.data / 'tiles_full' / self.layer / str(z)
         base = self.data / ('tiles_full' if full.is_dir() else 'tiles' if z >= 12 else 'tiles_low')
         path = base / self.layer / str(z) / str(x) / (str(y) + '.pbf')
@@ -94,11 +109,19 @@ class ComparisonTileSidecars:
                 _, (_, removed_size) = self._cache.popitem(last=False)
                 self._cache_bytes -= removed_size
 
-    def _build(self, path, version):
-        if path.stat().st_size > MAX_TILE_BYTES:
+    def _build(self, path, version, tile_coord=None):
+        if tile_coord is not None:
+            from contextlib import closing
+            with closing(sqlite3.connect(path.as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
+                row = db.execute('SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?', tile_coord).fetchone()
+            if row is None:
+                raise MissingTile()
+            data = bytes(row[0])
+        elif path.stat().st_size > MAX_TILE_BYTES:
             raise ValueError('Compressed tile exceeds comparison size limit')
-        with path.open('rb') as source:
-            data = source.read(MAX_TILE_BYTES + 1)
+        else:
+            with path.open('rb') as source:
+                data = source.read(MAX_TILE_BYTES + 1)
         if len(data) > MAX_TILE_BYTES:
             raise ValueError('Tile changed beyond comparison size limit')
         tile = read_attribute_tile(data, self.layer, max_bytes=MAX_TILE_BYTES)
@@ -111,7 +134,22 @@ class ComparisonTileSidecars:
             connection.execute('PRAGMA cache_size=-65536')
 
             def flush():
-                flags = _lookup_flags(connection, [key for _, key in batch])
+                keys = [key for _, key in batch]
+                flags = _lookup_flags(connection, keys) if self.dataset == 'seoul' else _lookup_flags(connection, keys, self.dataset)
+                if self.comparison == 'water' and self.dataset == 'kict':
+                    # Only suppress a group when EVERY original has an exact
+                    # same-ID counterpart whose municipal group is drawable.
+                    strict_keys = [key for key, flag in flags.items() if flag]
+                    if strict_keys:
+                        marks = ','.join('?' for _ in strict_keys)
+                        unsafe = connection.execute(f'''SELECT DISTINCT k.tile_key FROM pipes k
+                            WHERE k.dataset='kict' AND k.tile_key IN ({marks}) AND NOT EXISTS (
+                              SELECT 1 FROM relations r JOIN pipes s ON s.dataset='seoul' AND s.source_fid=r.seoul_fid
+                              JOIN tile_groups g ON g.dataset='seoul' AND g.tile_key=s.tile_key AND g.all_strict=1
+                              WHERE r.kict_fid=k.source_fid AND r.whole_geometry_equal=1 AND r.same_original_id=1
+                            )''', strict_keys)
+                        for row in unsafe:
+                            flags[row[0]] = 0
                 matches = 0
                 for ordinal, key in batch:
                     if flags[key]:
@@ -125,7 +163,7 @@ class ComparisonTileSidecars:
                     raise ValueError('Tile feature count exceeds verified sidecar bounds')
                 if not ordinal & 7:
                     bits.append(0)
-                batch.append((ordinal, self.key_function('seoul', properties)))
+                batch.append((ordinal, self.key_function(self.dataset, properties)))
                 feature_count += 1
                 if len(batch) == CHUNK_SIZE:
                     matched_count += flush()
@@ -138,7 +176,7 @@ class ComparisonTileSidecars:
     def get(self, z, x, y):
         info = self.package.verified()
         path = self._path(z, x, y)
-        key = (info['version'],) + self._fingerprint(path)
+        key = (info['version'],) + self._fingerprint(path) + (z,x,y)
         cached = self._cached(key)
         if cached is not None:
             return cached
@@ -149,14 +187,19 @@ class ComparisonTileSidecars:
             info = self.package.verified()
             path = self._path(z, x, y)
             fingerprint = self._fingerprint(path)
-            key = (info['version'],) + fingerprint
+            key = (info['version'],) + fingerprint + (z,x,y)
             cached = self._cached(key)
             if cached is not None:
                 return cached
-            payload = self._build(path, info['version'])
+            # Portable cache key: no absolute PC-specific paths.
+            disk_key = ('single-display-v1', info['version'], str(path.relative_to(self.data)), *fingerprint[1:])
+            payload = self.disk.get(self.layer, (z,x,y), disk_key)
+            if payload is None:
+                payload = self._build(path, info['version'], (z,x,y)) if path.suffix == '.mbtiles' else self._build(path, info['version'])
             if fingerprint != self._fingerprint(path) or self.package.verified()['version'] != info['version']:
                 raise ValueError('Comparison inputs changed during sidecar construction')
             self._remember(key, payload)
+            self.disk.put(self.layer, (z,x,y), disk_key, payload)
             return payload
         finally:
             self._build_slot.release()
@@ -168,7 +211,8 @@ def create_comparison_tiles_blueprint(data_directory, *, package=None, compariso
     if comparison == 'sewer' and package is None:
         raise ValueError('Sewer comparison requires its separately verified package')
     package = package if package is not None else ComparisonPackage(Path(data_directory) / 'comparison' / 'water')
-    sidecars = ComparisonTileSidecars(data_directory, package, comparison=comparison)
+    layers = ('kict_national', 'sa001') if comparison == 'water' else ('kict_sewer_seoul', 'sb001')
+    sidecars = {layer: ComparisonTileSidecars(data_directory, package, comparison=comparison, layer=layer) for layer in layers}
     bp = Blueprint(comparison + '_comparison_tiles', __name__, url_prefix='/comparison/' + comparison)
 
     @bp.errorhandler(MissingTile)
@@ -198,9 +242,9 @@ def create_comparison_tiles_blueprint(data_directory, *, package=None, compariso
 
     @bp.get('/tiles/<layer>/<int(signed=True):z>/<int(signed=True):x>/<int(signed=True):y>')
     def flags(layer, z, x, y):
-        if layer != sidecars.layer or not 0 <= z <= 17 or not 0 <= x < 2**z or not 0 <= y < 2**z:
+        if layer not in sidecars or not 0 <= z <= 17 or not 0 <= x < 2**z or not 0 <= y < 2**z:
             return jsonify(available=False, error='unsupported_tile', message='강조 조회 대상 타일이 아닙니다.'), 404
-        return jsonify(sidecars.get(z, x, y))
+        return jsonify(sidecars[layer].get(z, x, y))
 
     @bp.get('/tiles/<path:invalid>')
     def invalid(invalid):
