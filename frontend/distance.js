@@ -105,13 +105,14 @@
     const vectors = vectorCatalog?.selected() || [];
     for (const entry of vectors) { const row = document.createElement('div'), line = document.createElement('span'); row.className = 'vector-legend-row'; line.className = 'layer-line'; line.style.background = entry.color; row.append(line, document.createTextNode(entry.label)); $('vectorLegend').append(row); }
     const matchState = matchHighlight?.state();
-    if (matchState?.active) {
+    const matchPairs = matchState?.pairs ? Object.values(matchState.pairs) : matchState ? [{...matchState, label: '상수', highlightLabel: 'ID·전체 선형 완전일치'}] : [];
+    for (const pair of matchPairs.filter(pair => pair.active)) {
       const row = document.createElement('div'), line = document.createElement('span'), note = document.createElement('p');
       row.className = 'vector-legend-row match-legend-row'; line.className = 'match-legend-line'; line.setAttribute('aria-hidden', 'true');
-      row.append(line, document.createTextNode('ID·전체 선형 완전일치'));
+      row.append(line, document.createTextNode(`${pair.label} · ${pair.highlightLabel}`));
       note.className = 'hint match-legend-note';
-      note.textContent = matchState.status === 'error' ? '일치 정보를 일부 확인하지 못했습니다. 확인된 관로만 강조합니다.' :
-        matchState.status === 'loading' ? '완전일치 표시 정보를 확인하는 중…' : '원본 ID와 전체 선형이 모두 같은 관로입니다.';
+      note.textContent = pair.status === 'error' ? pair.message || `${pair.label} 일치 정보를 일부 확인하지 못했습니다. 확인된 관로만 강조합니다.` :
+        pair.status === 'loading' ? `${pair.label} 비교 표시 정보를 확인하는 중…` : pair.description || '원본 ID와 전체 선형이 모두 같은 관로입니다.';
       $('vectorLegend').append(row, note);
     }
     $('emptyLegend').hidden = shown || vectors.length > 0;

@@ -14,33 +14,36 @@ const cryptoFacade = {subtle: {digest(...args) {
   return pending;
 }}};
 const flush = async () => { await Promise.allSettled([...hashing]); for (let i = 0; i < 4; i++) await new Promise(setImmediate); };
-function fixture({manualMetadata = false} = {}) {
+function fixture({manualMetadata = false, allPairs = false} = {}) {
   const requests = [], changes = [], handlers = {}, frames = [];
   let bounds = [0, 0, 100, 100];
   const view = {on: (name, fn) => { handlers[name] = fn; }, getResolution: () => 100, calculateExtent: () => bounds};
   const grid = {getZForResolution: () => 6, getTileCoordExtent: ([z, x, y]) => [x * 100, y * 100, x * 100 + 99, y * 100 + 99]};
   const makeEntry = id => ({id, generation: 0, checkbox: {checked: false}, source: {getTileGrid: () => grid}, layer: {visible: false, zIndex: 10, getVisible() { return this.visible; }, getZIndex() { return this.zIndex; }, setZIndex(value) { this.zIndex = value; }, changed() { changes.push(id); }}});
   const entries = [makeEntry('kict_national'), makeEntry('sa001')];
+  if (allPairs) entries.push(...['kict_sewer_seoul', 'sb001', 'kict_sewer_national', 'kict_sewer_reference'].map(makeEntry));
   const context = {window: {}, crypto: cryptoFacade, WeakRef, Uint8Array, ArrayBuffer, AbortController, URL, location: {href: 'http://test/app/'}, atob: text => Buffer.from(text, 'base64').toString('binary'), setTimeout: () => 1, clearTimeout() {}, requestAnimationFrame: fn => { frames.push(fn); return frames.length; },
     ol: {style: {Style, Stroke}, extent: {intersects: (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]}},
     fetch: (url, options = {}) => {
-      if (url.endsWith('/metadata') && !manualMetadata) return Promise.resolve({ok: true, json: async () => ({available: true, version: 'v1'})});
+      if (url.endsWith('/metadata') && !manualMetadata) return Promise.resolve({ok: true, json: async () => ({available: true, version: url.includes('/sewer/') ? 'sewer-v1' : 'v1'})});
       return new Promise((resolve, reject) => requests.push({url, options, resolve: (body, ok = true) => resolve({ok, json: async () => body}), reject}));
     }};
   vm.runInNewContext(fs.existsSync(script) ? fs.readFileSync(script, 'utf8') : '', context);
   assert.equal(typeof context.window.PipeMatchHighlight?.create, 'function', 'highlight module provides create');
   const service = context.window.PipeMatchHighlight.create({map: {getView: () => view, getSize: () => [800, 600]}, getEntries: () => entries, apiBase: 'http://test/', onStateChange() {}});
   const toggle = on => { for (const entry of entries) { entry.checkbox.checked = on; entry.layer.visible = on; } service.syncVisibility(); };
-  const tile = (x = 0, count = 2) => {
-    const features = Array.from({length: count}, () => ({getProperties: () => ({layer: 'sa001'}), getGeometry: () => ({getType: () => 'LineString'})}));
+  const setLayers = ids => { for (const entry of entries) { entry.checkbox.checked = ids.includes(entry.id); entry.layer.visible = entry.checkbox.checked; } service.syncVisibility(); };
+  const tile = (x = 0, count = 2, layer = 'sa001') => {
+    const features = Array.from({length: count}, () => ({getProperties: () => ({layer}), getGeometry: () => ({getType: () => 'LineString'})}));
     const raw = new Uint8Array([x % 256, count, 3]).buffer;
     const value = {getTileCoord: () => [6, x, 0], getFeatures: () => features};
-    service.attachTile(entries[1], value, features, raw);
-    return {tile: value, features, raw, sha: createHash('sha256').update(new Uint8Array(raw)).digest('hex')};
+    const entry = entries.find(entry => entry.id === layer);
+    service.attachTile(entry, value, features, raw);
+    return {tile: value, features, raw, layer, entry, sha: createHash('sha256').update(new Uint8Array(raw)).digest('hex')};
   };
-  const reply = (target, bits = 1, extra = {}) => ({available: true, version: 'v1', layer: 'sa001', sha256: target.sha, feature_count: target.features.length, bits_base64: Buffer.from([bits]).toString('base64'), matched_count: bits === 3 ? 2 : bits ? 1 : 0, schema_version: 1, ...extra});
+  const reply = (target, bits = 1, extra = {}) => ({available: true, version: target.layer === 'sb001' ? 'sewer-v1' : 'v1', layer: target.layer, sha256: target.sha, feature_count: target.features.length, bits_base64: Buffer.from([bits]).toString('base64'), matched_count: bits === 3 ? 2 : bits ? 1 : 0, schema_version: 1, ...extra});
   const base = new Style({stroke: new Stroke({color: '#df7c24', width: 1.8}), zIndex: 0});
-  return {service, entries, requests, changes, toggle, tile, reply, base, frames, move: next => { bounds = next; handlers['change:center'](); }};
+  return {service, entries, requests, changes, toggle, setLayers, tile, reply, base, frames, move: next => { bounds = next; handlers['change:center'](); }};
 }
 
 test('both water layers are required and successful flags share cached styles', async () => {
@@ -120,8 +123,9 @@ test('highlight styles retain distinct canvas batches and use only two width tie
   const f = fixture(), t = f.tile(); f.toggle(true); await flush(); f.requests[0].resolve(f.reply(t)); await flush();
   const otherBase = new Style({zIndex: 17});
   const far = f.service.style(t.features[0], f.entries[1], f.base, 100), near = f.service.style(t.features[0], f.entries[1], f.base, 10), batch = f.service.style(t.features[0], f.entries[1], otherBase, 100);
-  assert.deepEqual(Array.from(far, style => style.getStroke().getWidth()), [2.6, 1.4]);
-  assert.deepEqual(Array.from(near, style => style.getStroke().getWidth()), [5, 3]);
+  assert.deepEqual(Array.from(far, style => style.getStroke().getWidth()), [3.6, 1.8]);
+  assert.deepEqual(Array.from(near, style => style.getStroke().getWidth()), [6, 3.2]);
+  assert.deepEqual(Array.from(near, style => style.getStroke().color), ['#ffffff', '#17212f']);
   assert.notEqual(batch[0].getZIndex(), far[0].getZIndex());
   assert.equal(near, f.service.style(t.features[0], f.entries[1], f.base, 1));
   assert.equal(f.service.style(t.features[0], f.entries[0], f.base, 10), f.base);
@@ -149,4 +153,89 @@ test('active Seoul emphasis stays above KICT regardless of asynchronous layer in
   assert.equal(f.entries[0].layer.getZIndex(), 10);
   assert.ok(f.entries[1].layer.getZIndex() < 200, 'clicked selection remains above auto emphasis');
   f.toggle(false); assert.equal(f.entries[1].layer.getZIndex(), 11, 'original layer priority restored');
+});
+
+test('all sixteen water/sewer combinations activate only their own complete pair', () => {
+  const ids = ['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001'];
+  for (let mask = 0; mask < 16; mask++) {
+    const f = fixture({allPairs: true});
+    f.setLayers(ids.filter((id, index) => mask & (1 << index)));
+    const state = f.service.state();
+    assert.equal(state.pairs.water.active, (mask & 3) === 3);
+    assert.equal(state.pairs.sewer.active, (mask & 12) === 12);
+    f.toggle(false);
+  }
+});
+
+test('national/reference sewer does not substitute for the Seoul comparison source', () => {
+  const f = fixture({allPairs: true});
+  f.setLayers(['sb001', 'kict_sewer_national', 'kict_sewer_reference']);
+  assert.equal(f.service.state().pairs.sewer.active, false); assert.equal(f.requests.length, 0);
+});
+
+test('all four layers prove independently and switching off water preserves sewer proof and priority', async () => {
+  const f = fixture({allPairs: true}), water = f.tile(), sewer = f.tile(0, 2, 'sb001');
+  f.setLayers(['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001']); await flush();
+  assert.equal(f.requests.length, 2);
+  f.requests.find(request => request.url.includes('/water/')).resolve(f.reply(water));
+  f.requests.find(request => request.url.includes('/sewer/')).resolve(f.reply(sewer)); await flush();
+  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10).length, 2);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 2);
+  f.setLayers(['sa001', 'kict_sewer_seoul', 'sb001']);
+  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10), f.base);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 2);
+  assert.equal(water.entry.layer.getZIndex(), 10); assert.equal(sewer.entry.layer.getZIndex(), 30);
+});
+
+test('one pair metadata failure does not prevent the other pair from becoming ready', async () => {
+  const f = fixture({allPairs: true, manualMetadata: true}), water = f.tile(), sewer = f.tile(0, 2, 'sb001');
+  f.setLayers(['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001']); await flush();
+  f.requests.find(request => request.url.includes('/water/')).resolve({available: false, message: '상수 자료 확인 필요'}, false);
+  f.requests.find(request => request.url.includes('/sewer/')).resolve({available: true, version: 'sewer-v1', highlight_label: '하수 검증 기준', description: '시험용으로 확인한 기준'}); await flush();
+  f.requests.find(request => request.url.includes('/sewer/tiles/')).resolve(f.reply(sewer)); await flush();
+  assert.equal(f.service.state().pairs.water.status, 'error');
+  assert.equal(f.service.state().pairs.sewer.status, 'ready');
+  assert.equal(f.service.state().pairs.sewer.highlightLabel, '하수 검증 기준');
+  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10), f.base);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10).length, 2);
+});
+
+test('shared request limit includes both pair metadata and flags, and a released slot serves the other pair', async () => {
+  const f = fixture({allPairs: true, manualMetadata: true}); f.move([0, 0, 300, 100]);
+  const water = [f.tile(), f.tile(1)], sewer = [f.tile(0, 2, 'sb001'), f.tile(1, 2, 'sb001')];
+  f.setLayers(['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001']); await flush();
+  assert.equal(f.requests.length, 2); assert.equal(f.service.state().inflightCount, 2);
+  f.requests[0].resolve({available: true, version: 'v1'}); await flush();
+  assert.equal(f.requests.length, 3); assert.equal(f.service.state().inflightCount, 2);
+  f.requests[1].resolve({available: true, version: 'sewer-v1'}); await flush();
+  assert.equal(f.requests.length, 4); assert.equal(f.service.state().inflightCount, 2);
+  assert.ok(f.requests[2].url.includes('/water/')); assert.ok(f.requests[3].url.includes('/sewer/'));
+  f.requests[2].resolve(f.reply(water[0])); await flush();
+  assert.equal(f.service.state().inflightCount, 2);
+  assert.ok(f.requests[4].url.includes('/sewer/'), 'other pair gets first opportunity after a flag response');
+  f.toggle(false); assert.equal(f.service.state().inflightCount, 0);
+  assert.ok(sewer.length === 2);
+});
+
+test('a late disabled sewer response cannot remove or replace an active water result', async () => {
+  const f = fixture({allPairs: true}), water = f.tile(), sewer = f.tile(0, 2, 'sb001');
+  f.setLayers(['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001']); await flush();
+  const oldSewer = f.requests.find(request => request.url.includes('/sewer/'));
+  f.requests.find(request => request.url.includes('/water/')).resolve(f.reply(water)); await flush();
+  f.setLayers(['kict_national', 'sa001', 'sb001']);
+  assert.equal(oldSewer.options.signal.aborted, true); oldSewer.resolve(f.reply(sewer)); await flush();
+  assert.equal(f.service.state().pairs.water.status, 'ready');
+  assert.equal(f.service.style(water.features[0], water.entry, f.base, 10).length, 2);
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10), f.base);
+});
+
+test('unavailable sewer criteria remain pending without implying a comparison result', async () => {
+  const f = fixture({allPairs: true, manualMetadata: true}), sewer = f.tile(0, 2, 'sb001');
+  f.setLayers(['kict_sewer_seoul', 'sb001']); await flush();
+  f.requests[0].resolve({available: false, message: '하수 비교 기준 확인이 필요합니다.'}, false); await flush();
+  const state = f.service.state().pairs.sewer;
+  assert.equal(state.highlightLabel, '비교 결과 대기');
+  assert.equal(state.message, '하수 비교 기준 확인이 필요합니다.');
+  assert.equal(f.requests.length, 1, 'unavailable criteria never request or manufacture tile flags');
+  assert.equal(f.service.style(sewer.features[0], sewer.entry, f.base, 10), f.base);
 });

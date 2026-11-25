@@ -91,6 +91,8 @@ _comparison_directory = ROOT / 'data' / 'comparison' / 'water'
 _comparison_package = ComparisonPackage(_comparison_directory)
 app.register_blueprint(create_comparison_blueprint(_comparison_directory, package=_comparison_package))
 app.register_blueprint(create_comparison_tiles_blueprint(ROOT / 'data', package=_comparison_package))
+from sewer_comparison import create_sewer_comparison_blueprint
+app.register_blueprint(create_sewer_comparison_blueprint())
 CORS(app, expose_headers=["Server-Timing", "X-Server-Ms", "X-Tile-Bytes", "X-Tile-Set", "X-Tile-Source", "Content-Length"])
 _log_lock = threading.Lock()
 _log_f = open(LOGS / "requests.csv", "a", encoding="utf-8", buffering=1)

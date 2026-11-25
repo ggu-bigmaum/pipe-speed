@@ -35,3 +35,16 @@ def tile_key(dataset, properties):
     if dataset not in FIELDS:
         raise ValueError('Unsupported comparison dataset')
     return json.dumps([scalar(properties.get(k)) for k in FIELDS[dataset]], ensure_ascii=False, separators=(',', ':'))
+
+
+def sewer_tile_key(dataset, properties):
+    """Retained unique source-row id, verified against the sewer tile manifests."""
+    if dataset not in ('kict', 'seoul'):
+        raise ValueError('Unsupported sewer dataset')
+    value = scalar(properties.get('id'))
+    if value is None or not value.isascii() or not value.isdecimal():
+        raise ValueError('Missing or invalid retained sewer id')
+    number = int(value)
+    if not 0 < number <= 2**53 - 1 or str(number) != value:
+        raise ValueError('Noncanonical retained sewer id')
+    return json.dumps([value], separators=(',', ':'))

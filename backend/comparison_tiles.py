@@ -13,7 +13,7 @@ import zlib
 from flask import Blueprint, jsonify
 
 from comparison import ComparisonPackage
-from comparison_keys import tile_key
+from comparison_keys import tile_key, sewer_tile_key
 from comparison_mvt import read_attribute_tile
 
 MAX_TILE_BYTES = 256 * 1024 * 1024
@@ -47,7 +47,11 @@ def _lookup_flags(connection, keys):
 
 
 class ComparisonTileSidecars:
-    def __init__(self, data_directory, package):
+    def __init__(self, data_directory, package, *, comparison='water'):
+        if comparison not in ('water', 'sewer'):
+            raise ValueError('Unsupported comparison pair')
+        self.layer = 'sa001' if comparison == 'water' else 'sb001'
+        self.key_function = tile_key if comparison == 'water' else sewer_tile_key
         self.data = Path(data_directory).resolve()
         self.package = package
         self._cache = OrderedDict()
@@ -56,9 +60,9 @@ class ComparisonTileSidecars:
         self._build_slot = threading.BoundedSemaphore(1)
 
     def _path(self, z, x, y):
-        full = self.data / 'tiles_full' / 'sa001' / str(z)
+        full = self.data / 'tiles_full' / self.layer / str(z)
         base = self.data / ('tiles_full' if full.is_dir() else 'tiles' if z >= 12 else 'tiles_low')
-        path = base / 'sa001' / str(z) / str(x) / (str(y) + '.pbf')
+        path = base / self.layer / str(z) / str(x) / (str(y) + '.pbf')
         if not path.is_file():
             raise MissingTile()
         return path
@@ -97,7 +101,7 @@ class ComparisonTileSidecars:
             data = source.read(MAX_TILE_BYTES + 1)
         if len(data) > MAX_TILE_BYTES:
             raise ValueError('Tile changed beyond comparison size limit')
-        tile = read_attribute_tile(data, 'sa001', max_bytes=MAX_TILE_BYTES)
+        tile = read_attribute_tile(data, self.layer, max_bytes=MAX_TILE_BYTES)
         del data
         bits, batch = bytearray(), []
         feature_count = matched_count = 0
@@ -121,13 +125,13 @@ class ComparisonTileSidecars:
                     raise ValueError('Tile feature count exceeds verified sidecar bounds')
                 if not ordinal & 7:
                     bits.append(0)
-                batch.append((ordinal, tile_key('seoul', properties)))
+                batch.append((ordinal, self.key_function('seoul', properties)))
                 feature_count += 1
                 if len(batch) == CHUNK_SIZE:
                     matched_count += flush()
             if batch:
                 matched_count += flush()
-        return dict(available=True, schema_version=1, version=version, layer='sa001',
+        return dict(available=True, schema_version=1, version=version, layer=self.layer,
                     sha256=tile.sha256, feature_count=feature_count, matched_count=matched_count,
                     bits_base64=base64.b64encode(bits).decode('ascii'))
 
@@ -158,10 +162,14 @@ class ComparisonTileSidecars:
             self._build_slot.release()
 
 
-def create_comparison_tiles_blueprint(data_directory, *, package=None):
+def create_comparison_tiles_blueprint(data_directory, *, package=None, comparison='water'):
+    if comparison not in ('water', 'sewer'):
+        raise ValueError('Unsupported comparison pair')
+    if comparison == 'sewer' and package is None:
+        raise ValueError('Sewer comparison requires its separately verified package')
     package = package if package is not None else ComparisonPackage(Path(data_directory) / 'comparison' / 'water')
-    sidecars = ComparisonTileSidecars(data_directory, package)
-    bp = Blueprint('water_comparison_tiles', __name__, url_prefix='/comparison/water')
+    sidecars = ComparisonTileSidecars(data_directory, package, comparison=comparison)
+    bp = Blueprint(comparison + '_comparison_tiles', __name__, url_prefix='/comparison/' + comparison)
 
     @bp.errorhandler(MissingTile)
     def missing(error):
@@ -190,7 +198,7 @@ def create_comparison_tiles_blueprint(data_directory, *, package=None):
 
     @bp.get('/tiles/<layer>/<int(signed=True):z>/<int(signed=True):x>/<int(signed=True):y>')
     def flags(layer, z, x, y):
-        if layer != 'sa001' or not 0 <= z <= 17 or not 0 <= x < 2**z or not 0 <= y < 2**z:
+        if layer != sidecars.layer or not 0 <= z <= 17 or not 0 <= x < 2**z or not 0 <= y < 2**z:
             return jsonify(available=False, error='unsupported_tile', message='강조 조회 대상 타일이 아닙니다.'), 404
         return jsonify(sidecars.get(z, x, y))
 

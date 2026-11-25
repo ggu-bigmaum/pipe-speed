@@ -52,7 +52,7 @@ async function fixture({count = 2} = {}) {
   return {catalog, highlight, entry, features, coords, tile, load, body, requests, set, flush, timers};
 }
 
-test('catalog installs ordinal metadata before base features and adds gold only after both-layer proof', async () => {
+test('catalog installs ordinal metadata before base features and adds navy emphasis only after pair proof', async () => {
   const f = await fixture({count: 16385});
   f.set(f.entry, true); await f.load();
   assert.equal(f.tile.features, f.features, 'base tile is installed immediately with original feature objects');
@@ -63,7 +63,7 @@ test('catalog installs ordinal metadata before base features and adds gold only 
   assert.ok(f.timers.includes(90000), 'server queue and large sidecar build have a separate bounded deadline');
   f.requests[0].resolve(f.body()); await f.flush();
   const styles = f.entry.layer.style(f.features.at(-1), 100);
-  assert.equal(styles.length, 2); assert.equal(styles[1].stroke.color, '#ffd43b'); assert.equal(styles[0].getZIndex(), 10002);
+  assert.equal(styles.length, 2); assert.equal(styles[0].stroke.color, '#ffffff'); assert.equal(styles[1].stroke.color, '#17212f'); assert.equal(styles[0].getZIndex(), 10002);
   assert.equal(f.entry.layer.style(f.features[0], 100).stroke.color, '#df7c24');
   assert.equal(f.features.at(-1).coordinates, f.coords, 'original geometry is not copied or replaced');
   f.set(f.catalog.entries[0], false);

@@ -145,3 +145,19 @@ test('strict comparison legend follows its own loading/error state without selec
   setHighlightState({active: false, status: 'inactive'});
   assert.doesNotMatch(text(elements.vectorLegend), /완전일치/);
 });
+
+test('water and sewer legends retain independent meaning and unavailable messages', async () => {
+  const {elements, rasters, setHighlightState} = await startup({seoul_water: state('seoul_water'), seoul_sewer: state('seoul_sewer')});
+  const text = node => typeof node === 'string' ? node : (node.textContent || '') + node.children.map(text).join('');
+  const water = {active: true, label: '상수', highlightLabel: 'ID·전체 선형 완전일치', status: 'ready', description: '상수 원본 전체 선형 기준'};
+  const sewer = {active: true, label: '하수', highlightLabel: '비교 결과 대기', status: 'error', message: '하수 판정 기준 확인 필요'};
+  setHighlightState({active: true, status: 'error', pairs: {water, sewer}});
+  assert.match(text(elements.vectorLegend), /상수 · ID·전체 선형 완전일치/);
+  assert.match(text(elements.vectorLegend), /상수 원본 전체 선형 기준/);
+  assert.match(text(elements.vectorLegend), /하수 · 비교 결과 대기/);
+  assert.match(text(elements.vectorLegend), /하수 판정 기준 확인 필요/);
+  assert.equal(rasters.some(input => input.checked), false);
+  setHighlightState({active: true, status: 'ready', pairs: {water, sewer: {...sewer, active: false}}});
+  assert.doesNotMatch(text(elements.vectorLegend), /하수/);
+  assert.match(text(elements.vectorLegend), /상수/);
+});
