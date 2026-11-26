@@ -8,8 +8,7 @@
   const COMPARE_MIN_ZOOM = 12;
   const COMPARISON_PARTNER = new Map([
     ['kict_national', 'sa001'], ['sa001', 'kict_national'],
-    ['kict_sewer_seoul', 'sb001'], ['sb001', 'kict_sewer_seoul'],
-    ['kict_sewer_national', 'kict_sewer_reference'], ['kict_sewer_reference', 'kict_sewer_national']
+    ['kict_sewer_seoul', 'sb001'], ['sb001', 'kict_sewer_seoul']
   ]);
   const canvasBatch = Symbol('canvasBatch');
   function create({map, view, config, tilesBase, onChange, onSelect, onRecord, highlight}) {

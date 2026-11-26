@@ -100,7 +100,7 @@ test('an already queued loader does not decode or install a hidden comparison la
 });
 
 test('each first vector unlocks only its designated counterpart at zoom 12 and never a third source', async () => {
-  const partners = {kict_national: 'sa001', sa001: 'kict_national', kict_sewer_seoul: 'sb001', sb001: 'kict_sewer_seoul', kict_sewer_national: 'kict_sewer_reference', kict_sewer_reference: 'kict_sewer_national'};
+  const partners = {kict_national: 'sa001', sa001: 'kict_national', kict_sewer_seoul: 'sb001', sb001: 'kict_sewer_seoul'};
   for (let firstIndex = 0; firstIndex < 6; firstIndex++) {
     const f = await fixture({allLayers: true});
     f.setZoom(11.99);
@@ -144,7 +144,7 @@ test('deselecting the first pipe keeps its selected counterpart as the new ancho
   assert.ok(f.catalog.entries.every(e => !e.checkbox.disabled));
 });
 
-test('outside-Seoul original/reference pair retains correction overlay only while its own layer stays selected', async () => {
+test('outside-Seoul reference stays standalone and retains its correction overlay across zooms', async () => {
   for (const referenceFirst of [false,true]) {
     const f=await fixture({allLayers:true});
     const original=f.catalog.entries.find(e=>e.id==='kict_sewer_national');
@@ -152,14 +152,17 @@ test('outside-Seoul original/reference pair retains correction overlay only whil
     reference.overlay=new Layer({visible:false});
     const first=referenceFirst?reference:original, second=referenceFirst?original:reference;
     f.setZoom(12); f.set(first,true);
-    assert.equal(second.checkbox.disabled,false);
+    assert.equal(second.checkbox.disabled,true);
     f.set(second,true);
-    assert.equal(reference.overlay.getVisible(),true);
+    assert.equal(second.checkbox.checked,false);
+    assert.equal(reference.overlay.getVisible(),referenceFirst);
     assert.equal(f.highlight.state().active,false,'reference pair must not manufacture Seoul exact-match evidence');
     f.setZoom(11.99);
     assert.equal(first.checkbox.checked,true);
     assert.equal(second.checkbox.checked,false);
     assert.equal(reference.overlay.getVisible(),referenceFirst);
+    f.set(first,false);
+    assert.equal(reference.overlay.getVisible(),false);
   }
 });
 
