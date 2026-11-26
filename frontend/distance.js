@@ -446,7 +446,7 @@
   }
   function municipalState(dataset, available, state, reason = '') {
     dataset.available = available; dataset.reason = reason;
-    $(dataset.statusStem + 'State').textContent = available ? '' : state === 'waiting' ? '자료 대기' : '확인 필요';
+    $(dataset.statusStem + 'State').textContent = available ? '서울·원본' : state === 'waiting' ? '자료 대기' : '확인 필요';
     $(dataset.statusStem + 'Note').textContent = available || state === 'waiting' ? '' : reason;
   }
   async function loadMunicipalAvailability() {

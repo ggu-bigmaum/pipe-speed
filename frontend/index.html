@@ -10,7 +10,7 @@
   <div class="brand"><span class="brand-icon" aria-hidden="true">▱</span><div><h1>관망 지도</h1></div><button id="closeLayers" class="icon mobile-only" aria-label="레이어 목록 닫기">×</button></div>
   <div class="catalog-heading"><h2>레이어</h2><span id="layerCount" class="count">5종</span></div>
   <details class="layer-group" open><summary><span>관로</span><span id="vectorCount" class="count">1</span></summary><div id="vectorList"></div></details>
-  <details class="layer-group national-group" id="nationalWaterGroup"><summary><span>거리 · 건기연 상수</span></summary>
+  <details class="layer-group national-group" id="nationalWaterGroup"><summary><span>거리 · 건기연 상수</span><span class="scope-badge">전국·원본</span></summary>
     <label class="region-picker" for="nationalWaterRegion">지역<select id="nationalWaterRegion" disabled><option>자료 확인 중…</option></select></label>
     <p id="nationalWaterNote" class="group-caption" role="status"></p>
     <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="nationalWaterCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
@@ -24,7 +24,7 @@
     <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="sewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>
     <label class="layer-row raster-row" title="관로가 지나가는 격자는 0m, 나머지는 Case 1과 동일"><input id="sewerCase2" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 2</strong><small>관로 통과 시 0</small></span></label>
   </details>
-  <details class="layer-group national-group" id="nationalSewerGroup"><summary><span>거리 · 건기연 하수</span><span class="scope-badge">서울 외</span></summary>
+  <details class="layer-group national-group" id="nationalSewerGroup"><summary><span>거리 · 건기연 하수</span><span class="scope-badge">서울 외·원본</span></summary>
     <label class="region-picker" for="nationalSewerRegion">지역<select id="nationalSewerRegion" disabled><option>자료 확인 중…</option></select></label>
     <p id="nationalSewerNote" class="group-caption" role="status">원본 · 전남 제외</p>
     <label class="layer-row raster-row" title="격자 중심에서 최근접 관로까지의 거리"><input id="nationalSewerCase1" data-raster type="checkbox" disabled><span class="layer-copy"><strong>Case 1</strong><small>중심점 거리</small></span></label>

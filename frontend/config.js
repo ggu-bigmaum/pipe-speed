@@ -4,11 +4,11 @@ window.APP_CONFIG = {
   API_BASE: '',                    // '' = 페이지와 같은 오리진(http://localhost:8000). 백엔드가 다른 곳이면 전체 URL
   // 타일 파일은 backend/data 아래에 별도 배치한다. 데이터가 없으면 선택칸이 비활성화된다.
   LAYERS: [
-    { id: 'kict_national', label: '건기연 상수관망', listLabel: '건기연 상수', badge: '전국', color: '#4dabf7' },
+    { id: 'kict_national', label: '건기연 상수관망', listLabel: '건기연 상수', badge: '전국·원본', color: '#4dabf7' },
     { id: 'kict_sewer_seoul', label: '건기연 하수(서울·보정본)', listLabel: '건기연 하수', badge: '서울·보정', color: '#168574' },
-    { id: 'kict_sewer_national', label: '건기연 하수(서울 외·원본)', listLabel: '건기연 하수', badge: '서울 외', note: '원본 · 전남 제외', color: '#168574' },
-    { id: 'sa001', label: '서울시 상수관망', listLabel: '서울시 상수', color: '#df7c24' },
-    { id: 'sb001', label: '서울시 하수관망', listLabel: '서울시 하수', color: '#9355b5' },
+    { id: 'kict_sewer_national', label: '건기연 하수(서울 외·원본)', listLabel: '건기연 하수', badge: '서울 외·원본', note: '전남 제외', color: '#168574' },
+    { id: 'sa001', label: '서울시 상수관망', listLabel: '서울시 상수', badge: '서울·원본', color: '#df7c24' },
+    { id: 'sb001', label: '서울시 하수관망', listLabel: '서울시 하수', badge: '서울·원본', color: '#9355b5' },
     { id: 'kict_sewer_reference', tileId: 'kict_sewer_national', label: '서울 외 원본·보정 연결(참고용)', listLabel: '관로·보정 결과', color: '#758d92', reference: true,
       overlayPath: 'reference/sewer/connections.geojson', container: 'referenceVectorList' }
   ],
