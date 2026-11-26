@@ -505,13 +505,22 @@
     } catch (error) { stopped = true; status(error.message, true); }
     finally { running = false; controls(); $('runState').textContent = `${stopped ? '중단' : '완료'} · ${completed}/${count * 2}건 측정`; }
   };
+  function fitKorea() {
+    const right = narrow.matches ? 20 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) + 40;
+    view.fit(ol.proj.transformExtent([125.5, 33.1, 129.8, 38.6], 'EPSG:4326', 'EPSG:3857'),
+      {padding: [20, right, 20, 20], nearest: true, duration: 0});
+    view.adjustZoom(1, ol.proj.fromLonLat([127.65, 35.85]));
+  }
   function fit() {
     moveController?.abort();
     suppressMove = true;
-    const extent = meta ? ol.proj.transformExtent(metadataExtent(meta), meta.crs, 'EPSG:3857', 16)
-      : ol.proj.transformExtent([124.5, 32.8, 132, 38.8], 'EPSG:4326', 'EPSG:3857');
-    const right = narrow.matches ? 24 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) + 50;
-    view.fit(extent, {padding: [70, right, 60, 35], duration: 0});
+    if (!meta || selectedDataset.members) {
+      fitKorea();
+    } else {
+      const extent = ol.proj.transformExtent(metadataExtent(meta), meta.crs, 'EPSG:3857', 16);
+      const right = narrow.matches ? 24 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) + 50;
+      view.fit(extent, {padding: [70, right, 60, 35], duration: 0});
+    }
     setTimeout(() => { suppressMove = false; }, 200);
   }
   $('fit').onclick = fit;
@@ -665,10 +674,7 @@
         selectedDataset = datasets.find(item => item.id === 'kict_water_national_all' && item.available) || selectedDataset;
         rasterInputs().forEach(input => { $(input).checked = false; });
         // Fit Korea to the usable screen, keeping the right panels off the land.
-        const initialRight = narrow.matches ? 20 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) + 40;
-        view.fit(ol.proj.transformExtent([125.5, 33.1, 129.8, 38.6], 'EPSG:4326', 'EPSG:3857'),
-          {padding: [20, initialRight, 20, 20], nearest: true, duration: 0});
-        view.adjustZoom(1, ol.proj.fromLonLat([127.65, 35.85]));
+        fitKorea();
         ready = true; syncLegend(); controls(); status('왼쪽에서 표시할 레이어를 선택하세요.');
       } else {
         if (selectedDataset.statusStem) await municipalReady;

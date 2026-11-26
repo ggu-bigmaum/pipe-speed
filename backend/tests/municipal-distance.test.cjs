@@ -20,8 +20,9 @@ class Element {
 }
 class MapAdapter {
   constructor(options = {}) { Object.assign(this, options); }
-  on() {} un() {} addLayer() {} removeLayer() {} render() {} fit() {} dispose() {} clear() {}
-  adjustZoom() {}
+  on() {} un() {} addLayer() {} removeLayer() {} render() {} dispose() {} clear() {}
+  fit(extent, options) { (this.fitCalls ||= []).push({extent, options}); }
+  adjustZoom(delta, anchor) { (this.zoomAdjustments ||= []).push({delta, anchor}); }
   getZoom() { return 11; }
   getSource() { return this.source; }
   setVisible(visible) { this.visible = visible; }
@@ -83,6 +84,19 @@ async function startup(cityStates, search = '') {
 const state = (dataset_id, available = false, extra = {}) => ({
   dataset_id, label: dataset_id === 'seoul_water' ? '서울시 상수' : '서울시 하수',
   available, status: available ? 'ready' : 'waiting', reason: available ? '' : '자료 대기', ...extra
+});
+
+test('national fit button restores the same Korea framing as startup on repeated clicks', async () => {
+  const {elements, context} = await startup({seoul_water: state('seoul_water'), seoul_sewer: state('seoul_sewer')});
+  const view = context.window.pipeDistance.map.view;
+  const initialFit = structuredClone(view.fitCalls[0]);
+  const initialZoom = structuredClone(view.zoomAdjustments[0]);
+  for (let i = 0; i < 2; i++) {
+    elements.fit.onclick();
+    assert.deepEqual(structuredClone(view.fitCalls.at(-1)), initialFit);
+    assert.deepEqual(structuredClone(view.zoomAdjustments.at(-1)), initialZoom);
+  }
+  assert.equal(view.zoomAdjustments.length, 3);
 });
 
 test('missing city data leaves legacy and national controls available without auto-selection', async () => {
