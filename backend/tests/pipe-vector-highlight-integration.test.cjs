@@ -41,7 +41,7 @@ async function fixture({count = 2, sewer = false, allLayers = false} = {}) {
   let catalog;
   const highlight = context.window.PipeMatchHighlight.create({map, getEntries: () => catalog?.entries || [], onStateChange() {}});
   const configuredLayers = allLayers
-    ? ['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001', 'kict_sewer_national', 'reference_sewer'].map(id => ({id, label: id, reference: id === 'reference_sewer'}))
+    ? ['kict_national', 'sa001', 'kict_sewer_seoul', 'sb001', 'kict_sewer_national', 'kict_sewer_reference'].map(id => ({id, label: id, reference: id === 'kict_sewer_reference'}))
     : [{id: sewer ? 'kict_sewer_seoul' : 'kict_national', label: '건기연', color: '#4dabf7'}, {id: sewer ? 'sb001' : 'sa001', label: '서울시', color: '#df7c24'}];
   catalog = context.window.PipeVectorCatalog.create({map, view, tilesBase: 'http://test/tiles/', config: {LAYERS: configuredLayers}, highlight, onChange() {}, onSelect() {}, onRecord() {}});
   const flush = async () => { await Promise.all(hashPromises); for (let i = 0; i < 4; i++) await new Promise(setImmediate); };
@@ -100,7 +100,7 @@ test('an already queued loader does not decode or install a hidden comparison la
 });
 
 test('each first vector unlocks only its designated counterpart at zoom 12 and never a third source', async () => {
-  const partners = {kict_national: 'sa001', sa001: 'kict_national', kict_sewer_seoul: 'sb001', sb001: 'kict_sewer_seoul'};
+  const partners = {kict_national: 'sa001', sa001: 'kict_national', kict_sewer_seoul: 'sb001', sb001: 'kict_sewer_seoul', kict_sewer_national: 'kict_sewer_reference', kict_sewer_reference: 'kict_sewer_national'};
   for (let firstIndex = 0; firstIndex < 6; firstIndex++) {
     const f = await fixture({allLayers: true});
     f.setZoom(11.99);
@@ -142,6 +142,25 @@ test('deselecting the first pipe keeps its selected counterpart as the new ancho
   assert.equal(sewer.checkbox.disabled, true);
   f.set(seoul, false);
   assert.ok(f.catalog.entries.every(e => !e.checkbox.disabled));
+});
+
+test('outside-Seoul original/reference pair retains correction overlay only while its own layer stays selected', async () => {
+  for (const referenceFirst of [false,true]) {
+    const f=await fixture({allLayers:true});
+    const original=f.catalog.entries.find(e=>e.id==='kict_sewer_national');
+    const reference=f.catalog.entries.find(e=>e.id==='kict_sewer_reference');
+    reference.overlay=new Layer({visible:false});
+    const first=referenceFirst?reference:original, second=referenceFirst?original:reference;
+    f.setZoom(12); f.set(first,true);
+    assert.equal(second.checkbox.disabled,false);
+    f.set(second,true);
+    assert.equal(reference.overlay.getVisible(),true);
+    assert.equal(f.highlight.state().active,false,'reference pair must not manufacture Seoul exact-match evidence');
+    f.setZoom(11.99);
+    assert.equal(first.checkbox.checked,true);
+    assert.equal(second.checkbox.checked,false);
+    assert.equal(reference.overlay.getVisible(),referenceFirst);
+  }
 });
 
 test('catalog installs ordinal metadata before base features and adds navy emphasis only after pair proof', async () => {

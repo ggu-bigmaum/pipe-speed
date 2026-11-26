@@ -8,7 +8,8 @@
   const COMPARE_MIN_ZOOM = 12;
   const COMPARISON_PARTNER = new Map([
     ['kict_national', 'sa001'], ['sa001', 'kict_national'],
-    ['kict_sewer_seoul', 'sb001'], ['sb001', 'kict_sewer_seoul']
+    ['kict_sewer_seoul', 'sb001'], ['sb001', 'kict_sewer_seoul'],
+    ['kict_sewer_national', 'kict_sewer_reference'], ['kict_sewer_reference', 'kict_sewer_national']
   ]);
   const canvasBatch = Symbol('canvasBatch');
   function create({map, view, config, tilesBase, onChange, onSelect, onRecord, highlight}) {
@@ -29,7 +30,7 @@
       const chosen = entries.filter(e => e.checkbox.checked).sort((a, b) => a.selectionOrder - b.selectionOrder);
       const anchor = chosen[0], partner = anchor && COMPARISON_PARTNER.get(anchor.id);
       // Only the first source and its explicit counterpart may coexist.
-      // Unrelated and reference sources stay locked even at higher zooms.
+      // Unrelated sources stay locked even at higher zooms.
       for (const entry of chosen.slice(1)) {
         if (restricted || entry.id !== partner) { entry.checkbox.checked = false; releaseEntry(entry); }
       }
