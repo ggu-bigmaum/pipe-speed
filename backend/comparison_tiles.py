@@ -4,6 +4,8 @@ Only original MVT attributes are decoded. Full-source comparison decisions
 already exist in the verified package; tile geometry never decides equality.
 """
 import base64
+import hashlib
+import io
 import os
 from collections import OrderedDict
 from pathlib import Path
@@ -11,12 +13,12 @@ import sqlite3
 import threading
 import zlib
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from comparison import ComparisonPackage
 from comparison_keys import tile_key, sewer_tile_key
-from comparison_mvt import read_attribute_tile
-from comparison_cache import TileFlagCache
+from comparison_mvt import read_attribute_tile, hash_tile_stream
+from comparison_cache import TileFlagCache, content_key, valid_payload
 
 MAX_TILE_BYTES = 256 * 1024 * 1024
 MAX_FEATURES = 4_000_000
@@ -25,6 +27,9 @@ MAX_CACHE_ENTRIES = 32
 MAX_CACHE_BYTES = 16 * 1024 * 1024
 MAX_CACHE_ENTRY_BYTES = 1024 * 1024
 BUILD_WAIT_SECONDS = 60
+# Separate lightweight verification budget, shared across all four layers.
+# MBTiles BLOBs are size-checked in SQL before allocation; at most two are held.
+_HASH_SLOTS = threading.BoundedSemaphore(2)
 
 
 class SidecarBusy(Exception):
@@ -85,7 +90,9 @@ class ComparisonTileSidecars:
     @staticmethod
     def _fingerprint(path):
         stat = path.stat()
-        return str(path), stat.st_size, stat.st_mtime_ns
+        # A process-local hint, never a portable cache identity. ctime/ino also
+        # detect replacements preserving size and mtime on ordinary filesystems.
+        return str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino
 
     def _peer_path(self, coord):
         if self.dataset != 'kict':
@@ -122,14 +129,17 @@ class ComparisonTileSidecars:
                 _, (_, removed_size) = self._cache.popitem(last=False)
                 self._cache_bytes -= removed_size
 
-    def _build(self, path, version, tile_coord=None):
+    def _read(self, path, tile_coord=None):
         if tile_coord is not None:
             from contextlib import closing
             with closing(sqlite3.connect(path.as_uri() + '?mode=ro&immutable=1', uri=True)) as db:
-                row = db.execute('SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?', tile_coord).fetchone()
+                row = db.execute('''SELECT length(tile_data), CASE WHEN length(tile_data)<=? THEN tile_data END
+                    FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?''', (MAX_TILE_BYTES, *tile_coord)).fetchone()
             if row is None:
                 raise MissingTile()
-            data = bytes(row[0])
+            if row[0] is None or row[0] > MAX_TILE_BYTES:
+                raise ValueError('Compressed tile exceeds comparison size limit')
+            data = bytes(row[1])
         elif path.stat().st_size > MAX_TILE_BYTES:
             raise ValueError('Compressed tile exceeds comparison size limit')
         else:
@@ -137,6 +147,24 @@ class ComparisonTileSidecars:
                 data = source.read(MAX_TILE_BYTES + 1)
         if len(data) > MAX_TILE_BYTES:
             raise ValueError('Tile changed beyond comparison size limit')
+        return data
+
+    def _content_sha(self, path, coord):
+        if not _HASH_SLOTS.acquire(timeout=BUILD_WAIT_SECONDS):
+            raise SidecarBusy()
+        try:
+            if path.suffix == '.mbtiles':
+                with io.BytesIO(self._read(path, coord)) as source:
+                    return hash_tile_stream(source, MAX_TILE_BYTES)
+            if path.stat().st_size > MAX_TILE_BYTES:
+                raise ValueError('Compressed tile exceeds comparison size limit')
+            with path.open('rb') as source:
+                return hash_tile_stream(source, MAX_TILE_BYTES)
+        finally:
+            _HASH_SLOTS.release()
+
+    def _build(self, path, version, tile_coord=None):
+        data = self._read(path, tile_coord)
         tile = read_attribute_tile(data, self.layer, max_bytes=MAX_TILE_BYTES)
         del data
         peer_keys, peer_sha = set(), None
@@ -216,39 +244,54 @@ class ComparisonTileSidecars:
                     sha256=tile.sha256, feature_count=feature_count, matched_count=matched_count,
                     bits_base64=base64.b64encode(bits).decode('ascii'), counterpart_sha256=peer_sha)
 
-    def get(self, z, x, y):
+    def _probe(self, coord):
+        """Hash only on a process-memory miss; persisted hits never decode MVT."""
         info = self.package.verified()
-        path = self._path(z, x, y)
-        key = (info['version'],) + self._fingerprint(path) + (z,x,y,self._peer_signature((z,x,y)))
+        path = self._path(*coord)
+        fingerprint, peer_signature = self._fingerprint(path), self._peer_signature(coord)
+        key = (info['version'],) + fingerprint + (*coord, peer_signature)
         cached = self._cached(key)
         if cached is not None:
-            return cached
+            return cached, None
+        sha = self._content_sha(path, coord)
+        peer_sha = self._content_sha(Path(peer_signature[0]), coord) if peer_signature else None
+        disk_key = content_key(self.comparison, self.layer, coord, info['version'], sha, peer_sha)
+        payload, migrate = self.disk.get_verified(self.layer, coord, disk_key)
+        snapshot = (path, fingerprint, peer_signature, key, disk_key)
+        self._check_snapshot(coord, snapshot)
+        if payload is not None:
+            if migrate:
+                self.disk.put(self.layer, coord, disk_key, payload)
+            self._remember(key, payload)
+        return payload, snapshot
+
+    def _check_snapshot(self, coord, snapshot):
+        path, fingerprint, peer_signature, _, disk_key = snapshot
+        if (self._path(*coord) != path or fingerprint != self._fingerprint(path)
+                or peer_signature != self._peer_signature(coord)
+                or self.package.verified()['version'] != disk_key[2]):
+            raise ValueError('Comparison inputs changed during sidecar construction')
+
+    def get(self, z, x, y):
+        coord = (z, x, y)
+        # Disk hits (including legacy migration) must bypass the expensive-build
+        # semaphore, so a busy uncached tile cannot stall known content.
+        payload, _ = self._probe(coord)
+        if payload is not None:
+            return payload
         if not self._build_slot.acquire(timeout=BUILD_WAIT_SECONDS):
             raise SidecarBusy()
         try:
-            # The tile or package may have changed while this request waited.
-            info = self.package.verified()
-            path = self._path(z, x, y)
-            fingerprint = self._fingerprint(path)
-            peer_signature = self._peer_signature((z,x,y))
-            key = (info['version'],) + fingerprint + (z,x,y,peer_signature)
-            cached = self._cached(key)
-            if cached is not None:
-                return cached
-            # Portable cache key: no absolute PC-specific paths.
-            peer_key = (str(Path(peer_signature[0]).relative_to(self.data)), *peer_signature[1:]) if peer_signature else None
-            disk_key = ('single-display-v1', info['version'], str(path.relative_to(self.data)), *fingerprint[1:])
-            if self.dataset == 'kict':
-                disk_key = ('single-display-peer-v2', *disk_key[1:], peer_key)
-            payload = self.disk.get(self.layer, (z,x,y), disk_key)
-            built = payload is None
-            if payload is None:
-                payload = self._build(path, info['version'], (z,x,y)) if path.suffix == '.mbtiles' else self._build(path, info['version'])
-            if fingerprint != self._fingerprint(path) or peer_signature != self._peer_signature((z,x,y)) or self.package.verified()['version'] != info['version']:
-                raise ValueError('Comparison inputs changed during sidecar construction')
+            payload, snapshot = self._probe(coord)
+            if payload is not None:
+                return payload
+            path, _, _, key, disk_key = snapshot
+            payload = self._build(path, disk_key[2], coord) if path.suffix == '.mbtiles' else self._build(path, disk_key[2])
+            self._check_snapshot(coord, snapshot)
+            if not valid_payload(payload, disk_key):
+                raise ValueError('Built flags do not match verified tile content')
+            self.disk.put(self.layer, coord, disk_key, payload)
             self._remember(key, payload)
-            if built:
-                self.disk.put(self.layer, (z,x,y), disk_key, payload)
             return payload
         finally:
             self._build_slot.release()
@@ -286,7 +329,14 @@ def create_comparison_tiles_blueprint(data_directory, *, package=None, compariso
 
     @bp.after_request
     def avoid_stale(response):
-        response.headers['Cache-Control'] = 'no-store'
+        if response.status_code == 200:
+            # Revalidate before every reuse; changing inputs cannot serve stale
+            # flags. Browser still verifies tile SHA before applying the bits.
+            response.headers['Cache-Control'] = 'public, max-age=0, must-revalidate'
+            response.set_etag(hashlib.sha256(response.get_data()).hexdigest())
+            response.make_conditional(request)
+        else:
+            response.headers['Cache-Control'] = 'no-store'
         return response
 
     @bp.get('/tiles/<layer>/<int(signed=True):z>/<int(signed=True):x>/<int(signed=True):y>')

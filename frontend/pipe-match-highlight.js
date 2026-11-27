@@ -108,7 +108,7 @@
       inflight.set(descriptor.id, job);
       const timer = setTimeout(() => job.controller.abort('timeout'), 90000);
       try {
-        const response = await fetch(base + 'comparison/' + pair.id + '/tiles/' + descriptor.entry.id + '/' + descriptor.coordinate.join('/'), {signal: job.controller.signal, cache: 'no-store'});
+        const response = await fetch(base + 'comparison/' + pair.id + '/tiles/' + descriptor.entry.id + '/' + descriptor.coordinate.join('/'), {signal: job.controller.signal, cache: 'no-cache'});
         const data = await response.json();
         if (!validJob(job)) return;
         if (!response.ok) throw new Error('Comparison tile unavailable');

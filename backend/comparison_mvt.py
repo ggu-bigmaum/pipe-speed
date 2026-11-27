@@ -10,6 +10,30 @@ import struct
 from dataclasses import dataclass
 
 
+def hash_tile_stream(source, max_bytes=256 * 1024 * 1024):
+    """Hash decompressed content in 1 MiB chunks; do not retain the tile."""
+    magic = source.read(2)
+    source.seek(0)
+    compressed = magic == b'\x1f\x8b'
+    reader = gzip.GzipFile(fileobj=source) if compressed else source
+    digest, size = hashlib.sha256(), 0
+    try:
+        while True:
+            block = reader.read(min(1024 * 1024, max_bytes - size + 1))
+            if not block:
+                break
+            size += len(block)
+            if size > max_bytes:
+                raise ValueError('Tile exceeds comparison sidecar size limit')
+            digest.update(block)
+    except (OSError, EOFError) as error:
+        raise ValueError('Invalid tile content') from error
+    finally:
+        if compressed:
+            reader.close()
+    return digest.hexdigest()
+
+
 def _varint(data, position):
     value = 0
     for shift in range(0, 70, 7):
@@ -110,7 +134,10 @@ class AttributeTile:
             ordinal += 1
 
 
-def read_attribute_tile(data, expected_layer, max_bytes=256 * 1024 * 1024):
+def tile_content(data, max_bytes=256 * 1024 * 1024):
+    """Canonical uncompressed bytes, without decoding attributes or geometries."""
+    if len(data) > max_bytes:
+        raise ValueError('Compressed tile exceeds comparison size limit')
     if data[:2] == b'\x1f\x8b':
         try:
             with gzip.GzipFile(fileobj=io.BytesIO(data)) as source:
@@ -119,6 +146,11 @@ def read_attribute_tile(data, expected_layer, max_bytes=256 * 1024 * 1024):
             raise ValueError('Invalid gzip tile') from error
     if len(data) > max_bytes:
         raise ValueError('Tile exceeds comparison sidecar size limit')
+    return data
+
+
+def read_attribute_tile(data, expected_layer, max_bytes=256 * 1024 * 1024):
+    data = tile_content(data, max_bytes)
     layers = [value for number, wire, value in _fields(memoryview(data)) if number == 3 and wire == 2]
     if len(layers) != 1:
         raise ValueError('Comparison sidecar requires exactly one layer')
